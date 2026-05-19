@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 const menuItems = [
-  { path: '/', icon: '[DE]', label: 'Daily Entry', description: 'Enter daily stock data' },
+  { path: '/', icon: '[DS]', label: 'Daily Sales', description: 'Enter daily stock data' },
   { path: '/invoice', icon: '[PI]', label: 'Purchase Invoice', description: 'Add purchase invoices' },
   { path: '/dashboard', icon: '[DB]', label: 'Dashboard', description: 'Today & monthly summary' },
   { path: '/analytics', icon: '[AN]', label: 'Analytics', description: 'Sales insights & charts' },
@@ -75,7 +75,7 @@ export default function Layout({ children }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{
               width: 36, height: 36, borderRadius: '50%',
-              background: 'linear-gradient(135deg, #3699ff, #7239ea)',
+              background: 'linear-gradient(135deg, #0E6633, #4ADE80)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               color: 'white', fontWeight: 700, fontSize: '0.85rem'
             }}>
