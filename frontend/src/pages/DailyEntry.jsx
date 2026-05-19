@@ -21,11 +21,12 @@ export default function DailyEntry() {
   const [deviceValues, setDeviceValues] = useState({ salesBottles:0, closingBottles:0, salesValue:0, closingValue:0 });
 
   // UI state
-  const [mode, setMode] = useState('sequential'); // 'sequential' | 'table' | 'summary'
+  const [mode, setMode] = useState('sequential'); // 'sequential' | 'table' | 'summary' | 'openingStock'
   const [currentIndex, setCurrentIndex] = useState(0);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState('');
   const [dataLoaded, setDataLoaded] = useState(false);
+  const [savingOS, setSavingOS] = useState(false);
 
   // Refs for auto-focus
   const caseInputRef = useRef(null);
@@ -132,7 +133,7 @@ export default function DailyEntry() {
       }
       setDataLoaded(true);
       setCurrentIndex(0);
-      setSaveMsg('✓ Data loaded');
+      setSaveMsg('Data loaded');
       setTimeout(() => setSaveMsg(''), 2000);
     } catch (err) {
       setSaveMsg('Failed to load');
@@ -151,7 +152,7 @@ export default function DailyEntry() {
         notes: Object.fromEntries(Object.entries(denomination.notes).map(([k,v]) => [k, {count:v}])),
         coins: denomination.coins
       });
-      setSaveMsg('✓ Saved successfully!');
+      setSaveMsg('Saved successfully!');
     } catch { setSaveMsg('Save failed'); }
     finally { setSaving(false); setTimeout(() => setSaveMsg(''), 3000); }
   };
@@ -171,6 +172,30 @@ export default function DailyEntry() {
       a.download = `TASMAC_1745_${['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][d.getMonth()]}-${String(d.getDate()).padStart(2,'0')}.xlsx`;
       document.body.appendChild(a); a.click(); a.remove();
     } catch { alert('Export failed'); }
+  };
+
+  // Save Opening Stock
+  const handleSaveOpeningStock = async () => {
+    if (!authenticated) { navigate('/login'); return; }
+    setSavingOS(true);
+    try {
+      const openingStockData = {};
+      entries.forEach(e => {
+        if (e.openingStock > 0) {
+          openingStockData[e.productId] = e.openingStock;
+        }
+      });
+      await api.post(`/daily-entry/${selectedDate}/opening-stock`, { openingStock: openingStockData });
+      setSaveMsg('Opening stock saved successfully');
+    } catch { setSaveMsg('Failed to save opening stock'); }
+    finally { setSavingOS(false); setTimeout(() => setSaveMsg(''), 3000); }
+  };
+
+  // Update opening stock for a product
+  const updateOpeningStock = (productId, value) => {
+    setEntries(prev => prev.map(e =>
+      e.productId === productId ? { ...e, openingStock: Number(value) || 0 } : e
+    ));
   };
 
   // Sequential mode: update current entry
@@ -226,7 +251,7 @@ export default function DailyEntry() {
             <div className="flex gap-8" style={{ alignItems: 'center' }}>
               {/* Mode switcher */}
               <div className="flex gap-4" style={{ background: '#f5f8fa', borderRadius: 8, padding: 3 }}>
-                {[{id:'sequential',label:'📝 Entry'},{id:'summary',label:'📊 Summary'},{id:'table',label:'📋 Table'}].map(m => (
+                {[{id:'sequential',label:'Entry'},{id:'openingStock',label:'Opening Stock'},{id:'summary',label:'Summary'},{id:'table',label:'Table'}].map(m => (
                   <button key={m.id} onClick={() => setMode(m.id)}
                     style={{
                       padding: '6px 14px', borderRadius: 6, fontSize: '0.8rem', fontWeight: 600, border: 'none',
@@ -238,9 +263,9 @@ export default function DailyEntry() {
                 ))}
               </div>
               <button className="btn-success" onClick={handleSave} disabled={saving}>
-                {saving ? '...' : authenticated ? '💾 Save' : '🔒 Save'}
+                {saving ? '...' : authenticated ? 'Save' : 'Login to Save'}
               </button>
-              <button className="btn-warning" onClick={handleExport}>📥 Excel</button>
+              <button className="btn-warning" onClick={handleExport}>Export</button>
             </div>
           </div>
 
@@ -281,7 +306,7 @@ export default function DailyEntry() {
           {activeEntries.length === 0 ? (
             <div className="card">
               <div className="card-body text-center" style={{ padding: 60 }}>
-                <div style={{ fontSize: '3rem', marginBottom: 16 }}>📦</div>
+                <div style={{ fontSize: '1.5rem', marginBottom: 16, color: 'var(--text-muted)' }}>No Data</div>
                 <h3 style={{ marginBottom: 8 }}>No Active Products</h3>
                 <p className="text-muted">Click "Load Data" to fetch opening stock, or go to "Purchase Invoice" to add purchases first.</p>
               </div>
@@ -384,7 +409,7 @@ export default function DailyEntry() {
                   {currentCalc.sales < 0 && (
                     <div style={{ marginTop: 16, padding: '10px 16px', background: '#fff5f8', borderRadius: 8, border: '1px solid var(--danger)' }}>
                       <span style={{ color: 'var(--danger)', fontWeight: 700, fontSize: '0.85rem' }}>
-                        ⚠️ Negative sales! Check closing stock values.
+                        Warning: Negative sales! Check closing stock values.
                       </span>
                     </div>
                   )}
@@ -466,6 +491,69 @@ export default function DailyEntry() {
         </div>
       )}
 
+      {/* ===== OPENING STOCK MODE ===== */}
+      {mode === 'openingStock' && (
+        <div>
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div className="card-header">
+              <h3>Enter Opening Stock</h3>
+              <button className="btn-success" onClick={handleSaveOpeningStock} disabled={savingOS}>
+                {savingOS ? 'Saving...' : 'Save Opening Stock'}
+              </button>
+            </div>
+            <div className="card-body">
+              <p className="text-muted text-sm" style={{ marginBottom: 16 }}>
+                Enter opening stock (total bottles) for each product. This is typically previous day's closing stock.
+              </p>
+            </div>
+          </div>
+
+          {CATEGORY_ORDER.map(cat => {
+            const catProducts = entries.filter(e => e.category === cat);
+            if (catProducts.length === 0) return null;
+            return (
+              <div key={cat} className="card" style={{ marginBottom: 12 }}>
+                <div className="card-header" style={{ background: '#f5f8fa' }}>
+                  <h4 style={{ fontSize: '0.9rem', color: 'var(--primary)' }}>{CATEGORIES[cat]?.label}</h4>
+                  <span className="badge badge-primary">{catProducts.length} items</span>
+                </div>
+                <div className="card-body" style={{ padding: '8px 16px' }}>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Product</th>
+                        <th>Code</th>
+                        <th>Rate</th>
+                        <th style={{ width: 120 }}>Opening Stock (bottles)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {catProducts.map(entry => (
+                        <tr key={entry.productId}>
+                          <td className="font-bold">{entry.particular}</td>
+                          <td className="text-muted">{entry.codeNo || '—'}</td>
+                          <td>{entry.rate > 0 ? `₹${entry.rate}` : '—'}</td>
+                          <td>
+                            <input
+                              type="number"
+                              min="0"
+                              value={entry.openingStock || ''}
+                              onChange={e => updateOpeningStock(entry.productId, e.target.value)}
+                              placeholder="0"
+                              style={{ width: 100, padding: '6px 8px', textAlign: 'center', border: '2px solid var(--primary)', borderRadius: 6 }}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* ===== SUMMARY MODE ===== */}
       {mode === 'summary' && (
         <div>
@@ -482,10 +570,10 @@ export default function DailyEntry() {
           {/* Device vs Manual */}
           <div className="card">
             <div className="card-header">
-              <h3>📱 Device vs Manual Comparison</h3>
+              <h3>Device vs Manual Comparison</h3>
               {(deviceValues.salesBottles > 0 || deviceValues.salesValue > 0) && (
                 <span className={allDeviceMatched ? 'badge badge-success' : 'badge badge-danger'}>
-                  {allDeviceMatched ? '✓ All Matched' : '✗ Mismatch'}
+                  {allDeviceMatched ? 'All Matched' : 'Mismatch'}
                 </span>
               )}
             </div>
@@ -517,12 +605,12 @@ export default function DailyEntry() {
                 </thead>
                 <tbody>
                   <tr>
-                    <td className="font-bold">📱 Device</td>
+                    <td className="font-bold">Device</td>
                     <td>{deviceValues.salesBottles||0}</td><td>{deviceValues.closingBottles||0}</td>
                     <td>₹{formatINR(deviceValues.salesValue||0)}</td><td>₹{formatINR(deviceValues.closingValue||0)}</td>
                   </tr>
                   <tr style={{ background: '#f9fafb' }}>
-                    <td className="font-bold">📝 Manual</td>
+                    <td className="font-bold">Manual</td>
                     <td>{manualValues.salesBottles}</td><td>{manualValues.closingBottles}</td>
                     <td>₹{formatINR(manualValues.salesValue)}</td><td>₹{formatINR(manualValues.closingValue)}</td>
                   </tr>
@@ -541,7 +629,7 @@ export default function DailyEntry() {
           {/* Validation Status */}
           <div className={cashMatch && totals.totalSales > 0 ? 'status-match' : totals.totalSales > 0 ? 'status-mismatch' : 'card'} style={{ marginBottom: 20 }}>
             {totals.totalSales > 0 ? (
-              cashMatch ? '✅ Cash + POS matches Grand Total Sales' : `⚠️ Mismatch: Cash+POS ₹${formatINR(cashPlusPOS)} vs Sales ₹${formatINR(totals.totalSales)}`
+              cashMatch ? 'Cash + POS matches Grand Total Sales' : `Mismatch: Cash+POS ${formatINR(cashPlusPOS)} vs Sales ${formatINR(totals.totalSales)}`
             ) : (
               <div className="card-body text-center text-muted">Enter data to see validation</div>
             )}

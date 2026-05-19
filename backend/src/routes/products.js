@@ -5,15 +5,37 @@ const { DEFAULT_PRODUCTS, CATEGORIES } = require('../data/products');
 
 // In-memory products store (in production, use Firestore)
 let products = DEFAULT_PRODUCTS.map(p => ({ ...p, status: 'active' }));
+let categories = { ...CATEGORIES };
 
 // GET /api/products - Get all products
 router.get('/', (req, res) => {
-  res.json({ products, categories: CATEGORIES });
+  res.json({ products, categories });
 });
 
 // GET /api/products/categories - Get all categories
 router.get('/categories', (req, res) => {
-  res.json({ categories: CATEGORIES });
+  res.json({ categories });
+});
+
+// POST /api/products/categories - Add a new category
+router.post('/categories', authMiddleware, (req, res) => {
+  const { key, label, bottlesPerCase } = req.body;
+
+  if (!key || !label) {
+    return res.status(400).json({ error: 'Category key and label are required' });
+  }
+
+  const normalizedKey = key.toUpperCase().replace(/\s+/g, '_');
+  if (categories[normalizedKey]) {
+    return res.status(409).json({ error: 'Category already exists' });
+  }
+
+  categories[normalizedKey] = {
+    label,
+    bottlesPerCase: Number(bottlesPerCase) || 48
+  };
+
+  res.json({ success: true, category: { key: normalizedKey, ...categories[normalizedKey] } });
 });
 
 // PUT /api/products/:id/rate - Update product rate

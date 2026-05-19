@@ -230,7 +230,7 @@ export default function CaseAbstract({ entries, calcEntry }) {
   return (
     <div className="card">
       <h3 style={{ marginBottom: '12px', fontSize: '1.1rem', color: '#1a237e' }}>
-        📦 CASE ABSTRACT
+        CASE ABSTRACT
       </h3>
 
       {/* Main Case Abstract Table */}

@@ -3,11 +3,11 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 const menuItems = [
-  { path: '/', icon: '📝', label: 'Daily Entry', description: 'Enter daily stock data' },
-  { path: '/invoice', icon: '🧾', label: 'Purchase Invoice', description: 'Add purchase invoices' },
-  { path: '/dashboard', icon: '📊', label: 'Dashboard', description: 'Today & monthly summary' },
-  { path: '/analytics', icon: '📈', label: 'Analytics', description: 'Sales insights & charts' },
-  { path: '/manage-products', icon: '📋', label: 'Manage Products', description: 'Add, edit, hide items' },
+  { path: '/', icon: '[DE]', label: 'Daily Entry', description: 'Enter daily stock data' },
+  { path: '/invoice', icon: '[PI]', label: 'Purchase Invoice', description: 'Add purchase invoices' },
+  { path: '/dashboard', icon: '[DB]', label: 'Dashboard', description: 'Today & monthly summary' },
+  { path: '/analytics', icon: '[AN]', label: 'Analytics', description: 'Sales insights & charts' },
+  { path: '/manage-products', icon: '[MP]', label: 'Manage Products', description: 'Add, edit, hide items' },
 ];
 
 export default function Layout({ children }) {
@@ -54,7 +54,7 @@ export default function Layout({ children }) {
           <div className="sidebar-menu-title" style={{ marginTop: 24 }}>Account</div>
           {authenticated ? (
             <div className="sidebar-item" onClick={logout}>
-              <span className="icon">🔓</span>
+              <span className="icon">[LO]</span>
               <div>
                 <div style={{ fontWeight: 600 }}>Logout</div>
                 <div style={{ fontSize: '0.7rem', opacity: 0.7, marginTop: 1 }}>Lock editing access</div>
@@ -62,7 +62,7 @@ export default function Layout({ children }) {
             </div>
           ) : (
             <div className="sidebar-item" onClick={() => { navigate('/login'); setSidebarOpen(false); }}>
-              <span className="icon">🔑</span>
+              <span className="icon">[LK]</span>
               <div>
                 <div style={{ fontWeight: 600 }}>Enter PIN</div>
                 <div style={{ fontSize: '0.7rem', opacity: 0.7, marginTop: 1 }}>Unlock edit & save</div>
@@ -84,7 +84,7 @@ export default function Layout({ children }) {
             <div>
               <div style={{ color: '#fff', fontSize: '0.8rem', fontWeight: 600 }}>ANTONYSAMY.A</div>
               <div style={{ color: 'var(--sidebar-text)', fontSize: '0.7rem' }}>
-                {authenticated ? '🟢 Unlocked' : '🔴 View Only'}
+                {authenticated ? '● Unlocked' : '● View Only'}
               </div>
             </div>
           </div>
@@ -119,11 +119,11 @@ export default function Layout({ children }) {
             <div className="flex gap-12" style={{ alignItems: 'center' }}>
               {!authenticated && (
                 <button className="btn-light-primary btn-sm" onClick={() => navigate('/login')}>
-                  🔑 Enter PIN to Edit
+                  Enter PIN to Edit
                 </button>
               )}
               {authenticated && (
-                <span className="badge badge-success">✓ Edit Mode</span>
+                <span className="badge badge-success">Edit Mode</span>
               )}
             </div>
           </div>

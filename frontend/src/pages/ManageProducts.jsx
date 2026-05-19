@@ -26,6 +26,10 @@ export default function ManageProducts() {
     codeNo: '', particular: '', category: '180ML_BRANDY', rate: 0
   });
   const [message, setMessage] = useState('');
+  const [activeTab, setActiveTab] = useState('products'); // 'products' | 'categories'
+  const [categories, setCategories] = useState(() => ({ ...CATEGORIES }));
+  const [newCategory, setNewCategory] = useState({ key: '', label: '', bottlesPerCase: 48 });
+  const [showAddCategory, setShowAddCategory] = useState(false);
 
   const handlePinSubmit = (e) => {
     e.preventDefault();
@@ -104,12 +108,31 @@ export default function ManageProducts() {
     setTimeout(() => setMessage(''), 3000);
   };
 
+  const handleAddCategory = () => {
+    if (!newCategory.key.trim() || !newCategory.label.trim()) {
+      showMsg('Category key and label are required');
+      return;
+    }
+    const key = newCategory.key.toUpperCase().replace(/\s+/g, '_');
+    if (categories[key]) {
+      showMsg('Category key already exists');
+      return;
+    }
+    setCategories(prev => ({
+      ...prev,
+      [key]: { label: newCategory.label, bottlesPerCase: Number(newCategory.bottlesPerCase) || 48 }
+    }));
+    setNewCategory({ key: '', label: '', bottlesPerCase: 48 });
+    setShowAddCategory(false);
+    showMsg('Category added successfully');
+  };
+
   // PIN entry screen
   if (!authenticated) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
         <div className="card" style={{ maxWidth: '400px', width: '100%', textAlign: 'center' }}>
-          <h2 style={{ marginBottom: '16px', color: '#1a237e' }}>🔒 Manage Products</h2>
+          <h2 style={{ marginBottom: '16px', color: '#1a237e' }}>Manage Products</h2>
           <p style={{ color: '#757575', marginBottom: '20px' }}>Enter PIN to access product management</p>
           <form onSubmit={handlePinSubmit}>
             <input
@@ -134,15 +157,39 @@ export default function ManageProducts() {
   return (
     <div>
       <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-        <h2 style={{ fontSize: '1.2rem', color: '#1a237e' }}>📋 Manage Products</h2>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button
-            onClick={() => setShowAddForm(!showAddForm)}
-            className="btn-success"
-            style={{ padding: '10px 20px', fontSize: '0.9rem' }}
-          >
-            {showAddForm ? 'Cancel' : '+ Add Product'}
-          </button>
+        <h2 style={{ fontSize: '1.2rem', color: '#1a237e' }}>Manage Products</h2>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {/* Tab Switcher */}
+          <div style={{ display: 'flex', gap: 4, background: '#f5f8fa', borderRadius: 8, padding: 3 }}>
+            <button onClick={() => setActiveTab('products')} style={{
+              padding: '6px 14px', borderRadius: 6, fontSize: '0.8rem', fontWeight: 600, border: 'none',
+              background: activeTab === 'products' ? 'var(--primary, #3699ff)' : 'transparent',
+              color: activeTab === 'products' ? 'white' : '#7e8299', cursor: 'pointer'
+            }}>Products</button>
+            <button onClick={() => setActiveTab('categories')} style={{
+              padding: '6px 14px', borderRadius: 6, fontSize: '0.8rem', fontWeight: 600, border: 'none',
+              background: activeTab === 'categories' ? 'var(--primary, #3699ff)' : 'transparent',
+              color: activeTab === 'categories' ? 'white' : '#7e8299', cursor: 'pointer'
+            }}>Categories</button>
+          </div>
+          {activeTab === 'products' && (
+            <button
+              onClick={() => setShowAddForm(!showAddForm)}
+              className="btn-success"
+              style={{ padding: '10px 20px', fontSize: '0.9rem' }}
+            >
+              {showAddForm ? 'Cancel' : '+ Add Product'}
+            </button>
+          )}
+          {activeTab === 'categories' && (
+            <button
+              onClick={() => setShowAddCategory(!showAddCategory)}
+              className="btn-success"
+              style={{ padding: '10px 20px', fontSize: '0.9rem' }}
+            >
+              {showAddCategory ? 'Cancel' : '+ Add Category'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -155,6 +202,80 @@ export default function ManageProducts() {
         </div>
       )}
 
+      {/* Categories Tab */}
+      {activeTab === 'categories' && (
+        <div>
+          {showAddCategory && (
+            <div className="card" style={{ border: '2px solid #2e7d32' }}>
+              <h3 style={{ marginBottom: '12px', fontSize: '1rem' }}>Add New Category</h3>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'flex-end' }}>
+                <div style={{ flex: '1 1 160px' }}>
+                  <label style={{ fontSize: '0.8rem', fontWeight: '600', display: 'block', marginBottom: '4px' }}>Key (e.g. 180ML_NEW)</label>
+                  <input
+                    type="text"
+                    value={newCategory.key}
+                    onChange={(e) => setNewCategory({ ...newCategory, key: e.target.value })}
+                    placeholder="CATEGORY_KEY"
+                    style={{ padding: '10px' }}
+                  />
+                </div>
+                <div style={{ flex: '2 1 200px' }}>
+                  <label style={{ fontSize: '0.8rem', fontWeight: '600', display: 'block', marginBottom: '4px' }}>Label</label>
+                  <input
+                    type="text"
+                    value={newCategory.label}
+                    onChange={(e) => setNewCategory({ ...newCategory, label: e.target.value })}
+                    placeholder="Display label"
+                    style={{ padding: '10px' }}
+                  />
+                </div>
+                <div style={{ flex: '1 1 120px' }}>
+                  <label style={{ fontSize: '0.8rem', fontWeight: '600', display: 'block', marginBottom: '4px' }}>Bottles Per Case</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={newCategory.bottlesPerCase || ''}
+                    onChange={(e) => setNewCategory({ ...newCategory, bottlesPerCase: e.target.value })}
+                    placeholder="48"
+                    style={{ padding: '10px' }}
+                  />
+                </div>
+                <button onClick={handleAddCategory} className="btn-success" style={{ padding: '10px 20px' }}>
+                  Add
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="card" style={{ padding: '8px' }}>
+            <div className="table-wrapper" style={{ maxHeight: '60vh', overflow: 'auto' }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Key</th>
+                    <th>Label</th>
+                    <th>Bottles Per Case</th>
+                    <th>Products</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(categories).map(([key, cat]) => (
+                    <tr key={key}>
+                      <td style={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>{key}</td>
+                      <td style={{ fontWeight: 600 }}>{cat.label}</td>
+                      <td style={{ textAlign: 'center' }}>{cat.bottlesPerCase}</td>
+                      <td style={{ textAlign: 'center' }}>{products.filter(p => p.category === key).length}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Products Tab */}
+      {activeTab === 'products' && (<>
       {/* Add Product Form */}
       {showAddForm && (
         <div className="card" style={{ border: '2px solid #2e7d32' }}>
@@ -295,7 +416,7 @@ export default function ManageProducts() {
                           onClick={() => saveRate(product.id)}
                           style={{ padding: '4px 8px', background: '#2e7d32', color: 'white', borderRadius: '4px', fontSize: '0.75rem', border: 'none', cursor: 'pointer' }}
                         >
-                          ✓
+                          OK
                         </button>
                       </div>
                     ) : (
@@ -336,6 +457,7 @@ export default function ManageProducts() {
           </table>
         </div>
       </div>
+      </>)}
     </div>
   );
 }

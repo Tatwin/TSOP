@@ -15,9 +15,9 @@ export default function DenominationCounter({ denomination, setDenomination, tot
   return (
     <div className="card">
       <div className="card-header">
-        <h3>💵 Cash Denomination</h3>
+        <h3>Cash Denomination</h3>
         <div className={cashMatch && totalSales > 0 ? 'badge badge-success' : totalSales > 0 ? 'badge badge-danger' : 'badge badge-primary'}>
-          {totalSales > 0 ? (cashMatch ? '✓ Matched' : '✗ Mismatch') : 'Enter data'}
+          {totalSales > 0 ? (cashMatch ? 'Matched' : 'Mismatch') : 'Enter data'}
         </div>
       </div>
       <div className="card-body">
@@ -80,7 +80,7 @@ export default function DenominationCounter({ denomination, setDenomination, tot
             <div className="text-xs text-muted mb-4">Cash + POS</div>
             <div className="font-bold" style={{ fontSize: '1.2rem', color: cashMatch ? 'var(--success)' : 'var(--danger)' }}>₹{formatINR(cashPlusPOS)}</div>
             <div className="text-xs" style={{ color: cashMatch ? 'var(--success)' : 'var(--danger)', marginTop: 4 }}>
-              {cashMatch ? '= Sales ✓' : `vs Sales ₹${formatINR(totalSales)}`}
+              {cashMatch ? '= Sales' : `vs Sales ₹${formatINR(totalSales)}`}
             </div>
           </div>
           <div style={{ padding: 16, background: '#fff8dd', borderRadius: 8, textAlign: 'center' }}>

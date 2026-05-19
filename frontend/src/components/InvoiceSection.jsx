@@ -123,8 +123,8 @@ export default function InvoiceSection({ invoices, setInvoices, selectedDate, to
           color: Math.abs(invoiceTotal - totalSales) < 1 ? '#2e7d32' : '#e65100'
         }}>
           {Math.abs(invoiceTotal - totalSales) < 1
-            ? `✅ Invoice total matches sales: ₹${formatINR(invoiceTotal)}`
-            : `⚠️ Invoice total ₹${formatINR(invoiceTotal)} ≠ Sales ₹${formatINR(totalSales)} (Diff: ₹${formatINR(Math.abs(invoiceTotal - totalSales))})`
+            ? `Invoice total matches sales: ₹${formatINR(invoiceTotal)}`
+            : `Invoice total ₹${formatINR(invoiceTotal)} != Sales ₹${formatINR(totalSales)} (Diff: ₹${formatINR(Math.abs(invoiceTotal - totalSales))})`
           }
         </div>
       )}

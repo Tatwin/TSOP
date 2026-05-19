@@ -33,6 +33,8 @@ export default function InvoicePage() {
   const [saveMsg, setSaveMsg] = useState('');
   const codeInputRef = useRef(null);
   const qtyInputRef = useRef(null);
+  const [editingItem, setEditingItem] = useState(null); // { invoiceIdx, itemIdx }
+  const [editQty, setEditQty] = useState('');
 
   // Get current invoice's purchased items total
   const currentInvoice = activeInvoiceIdx !== null ? invoices[activeInvoiceIdx] : null;
@@ -132,6 +134,15 @@ export default function InvoicePage() {
   // Save all invoices → apply purchases to daily entry
   const handleSaveInvoices = async () => {
     if (!authenticated) { navigate('/login'); return; }
+    // Enforce: each invoice's items total must match invoice amount
+    for (const inv of invoices) {
+      const itemsTotal = (inv.items || []).reduce((s, i) => s + i.qty * i.rate, 0);
+      if (Math.abs(itemsTotal - inv.invoiceAmount) >= 1) {
+        setSaveMsg(`Cannot save: Invoice #${inv.invoiceNo} items total (₹${formatINR(itemsTotal)}) does not match invoice amount (₹${formatINR(inv.invoiceAmount)})`);
+        setTimeout(() => setSaveMsg(''), 5000);
+        return;
+      }
+    }
     try {
       // Aggregate all purchase quantities by product
       const purchaseMap = {};
@@ -147,7 +158,7 @@ export default function InvoicePage() {
         purchases: purchaseMap
       });
 
-      setSaveMsg('✓ Invoices saved & purchases applied to daily entry!');
+      setSaveMsg('Invoices saved & purchases applied to daily entry!');
       setTimeout(() => setSaveMsg(''), 3000);
     } catch (err) {
       setSaveMsg('Failed to save: ' + (err.message || 'Error'));
@@ -160,6 +171,33 @@ export default function InvoicePage() {
       if (idx !== invoiceIdx) return inv;
       return { ...inv, items: inv.items.filter((_, i) => i !== itemIdx) };
     }));
+  };
+
+  // Start editing an item
+  const startEditItem = (invoiceIdx, itemIdx) => {
+    const item = invoices[invoiceIdx].items[itemIdx];
+    setEditingItem({ invoiceIdx, itemIdx });
+    setEditQty(String(item.qty));
+  };
+
+  // Save edited item quantity
+  const saveEditItem = () => {
+    if (!editingItem) return;
+    const { invoiceIdx, itemIdx } = editingItem;
+    const newQty = Number(editQty) || 0;
+    if (newQty <= 0) return;
+    setInvoices(prev => prev.map((inv, idx) => {
+      if (idx !== invoiceIdx) return inv;
+      return { ...inv, items: inv.items.map((item, i) => i === itemIdx ? { ...item, qty: newQty } : item) };
+    }));
+    setEditingItem(null);
+    setEditQty('');
+  };
+
+  // Cancel editing
+  const cancelEditItem = () => {
+    setEditingItem(null);
+    setEditQty('');
   };
 
   return (
@@ -177,7 +215,7 @@ export default function InvoicePage() {
             <div className="flex gap-8">
               <button className="btn-primary" onClick={() => setShowAddInvoice(true)}>+ Add Invoice</button>
               <button className="btn-success" onClick={handleSaveInvoices} disabled={invoices.length === 0}>
-                {authenticated ? '💾 Save & Apply' : '🔒 Login to Save'}
+                {authenticated ? 'Save & Apply' : 'Login to Save'}
               </button>
             </div>
           </div>
@@ -222,7 +260,7 @@ export default function InvoicePage() {
       {invoices.length === 0 && !showAddInvoice && (
         <div className="card">
           <div className="card-body text-center" style={{ padding: 60 }}>
-            <div style={{ fontSize: '3rem', marginBottom: 16 }}>🧾</div>
+            <div style={{ fontSize: '1.5rem', marginBottom: 16, color: 'var(--text-muted)' }}>No Invoices</div>
             <h3 style={{ marginBottom: 8 }}>No Invoices Yet</h3>
             <p className="text-muted mb-16">Click "Add Invoice" to start adding purchase invoices for today.</p>
             <button className="btn-primary btn-lg" onClick={() => setShowAddInvoice(true)}>+ Add First Invoice</button>
@@ -244,7 +282,7 @@ export default function InvoicePage() {
               </div>
               <div className="flex gap-8" style={{ alignItems: 'center' }}>
                 {matched ? (
-                  <span className="badge badge-success">✓ Matched</span>
+                  <span className="badge badge-success">Matched</span>
                 ) : (
                   <span className="badge badge-warning">₹{formatINR(invoice.invoiceAmount - itemsTotal)} remaining</span>
                 )}
@@ -263,19 +301,46 @@ export default function InvoicePage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {invoice.items.map((item, itemIdx) => (
-                      <tr key={itemIdx}>
-                        <td className="text-muted">{item.codeNo}</td>
-                        <td className="font-bold">{item.particular}</td>
-                        <td>{item.qty}</td>
-                        <td>₹{item.rate}</td>
-                        <td className="font-bold text-primary">₹{formatINR(item.qty * item.rate)}</td>
-                        <td>
-                          <button className="btn-sm" style={{ background: '#fff5f8', color: 'var(--danger)', border: 'none', padding: '4px 8px', borderRadius: 4, cursor: 'pointer' }}
-                            onClick={() => removeItem(idx, itemIdx)}>✕</button>
-                        </td>
-                      </tr>
-                    ))}
+                    {invoice.items.map((item, itemIdx) => {
+                      const isEditing = editingItem && editingItem.invoiceIdx === idx && editingItem.itemIdx === itemIdx;
+                      return (
+                        <tr key={itemIdx}>
+                          <td className="text-muted">{item.codeNo}</td>
+                          <td className="font-bold">{item.particular}</td>
+                          <td>
+                            {isEditing ? (
+                              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={editQty}
+                                  onChange={e => setEditQty(e.target.value)}
+                                  onKeyDown={e => { if (e.key === 'Enter') saveEditItem(); if (e.key === 'Escape') cancelEditItem(); }}
+                                  style={{ width: 60, padding: '4px 6px', textAlign: 'center', border: '2px solid var(--primary)', borderRadius: 4 }}
+                                  autoFocus
+                                />
+                                <button onClick={saveEditItem} style={{ padding: '3px 6px', background: '#2e7d32', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: '0.75rem' }}>OK</button>
+                                <button onClick={cancelEditItem} style={{ padding: '3px 6px', background: '#eee', color: '#333', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: '0.75rem' }}>X</button>
+                              </div>
+                            ) : (
+                              item.qty
+                            )}
+                          </td>
+                          <td>₹{item.rate}</td>
+                          <td className="font-bold text-primary">₹{formatINR((isEditing ? Number(editQty) || item.qty : item.qty) * item.rate)}</td>
+                          <td>
+                            <div style={{ display: 'flex', gap: 4 }}>
+                              {!isEditing && (
+                                <button className="btn-sm" style={{ background: '#e3f2fd', color: 'var(--primary, #3699ff)', border: 'none', padding: '4px 8px', borderRadius: 4, cursor: 'pointer' }}
+                                  onClick={() => startEditItem(idx, itemIdx)}>Edit</button>
+                              )}
+                              <button className="btn-sm" style={{ background: '#fff5f8', color: 'var(--danger)', border: 'none', padding: '4px 8px', borderRadius: 4, cursor: 'pointer' }}
+                                onClick={() => removeItem(idx, itemIdx)}>X</button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                   <tfoot>
                     <tr style={{ background: '#f9fafb' }}>
@@ -288,6 +353,11 @@ export default function InvoicePage() {
                     </tr>
                   </tfoot>
                 </table>
+                {!matched && itemsTotal > 0 && (
+                  <div style={{ marginTop: 8, padding: '6px 12px', background: '#fff8dd', borderRadius: 6, fontSize: '0.8rem', color: '#b38600', fontWeight: 600 }}>
+                    Items total must equal invoice amount to save/close. Difference: ₹{formatINR(Math.abs(invoice.invoiceAmount - itemsTotal))}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -306,7 +376,7 @@ export default function InvoicePage() {
                   <strong style={{ color: remainingAmount <= 0 ? 'var(--success)' : 'var(--warning)' }}> Remaining: ₹{formatINR(Math.max(0, remainingAmount))}</strong>
                 </p>
               </div>
-              <button className="btn-secondary btn-sm" onClick={() => setShowPurchaseDialog(false)}>✕ Close</button>
+              <button className="btn-secondary btn-sm" onClick={() => setShowPurchaseDialog(false)}>Close</button>
             </div>
 
             <div className="modal-body">
@@ -316,7 +386,7 @@ export default function InvoicePage() {
               </div>
 
               {remainingAmount <= 0 && (
-                <div className="status-match mb-16">✅ Invoice amount matched!</div>
+                <div className="status-match mb-16">Invoice amount matched!</div>
               )}
 
               {/* Code Input */}
@@ -374,7 +444,7 @@ export default function InvoicePage() {
               {/* Not Found */}
               {notFound && !showNewProduct && (
                 <div style={{ padding: 16, background: '#fff5f8', borderRadius: 8, border: '1px solid var(--danger)', marginBottom: 16 }}>
-                  <p className="font-bold text-danger mb-8">⚠️ Product code "{codeInput}" not found!</p>
+                  <p className="font-bold text-danger mb-8">Product code "{codeInput}" not found!</p>
                   <button className="btn-primary btn-sm" onClick={() => { setShowNewProduct(true); setNewProduct({ codeNo: codeInput, particular: '', category: '180ML_BRANDY', rate: 0 }); }}>
                     + Add as New Product
                   </button>
@@ -406,7 +476,7 @@ export default function InvoicePage() {
                     </div>
                   </div>
                   <div className="flex gap-8">
-                    <button className="btn-success btn-sm" onClick={handleAddNewProduct}>✓ Add Product</button>
+                    <button className="btn-success btn-sm" onClick={handleAddNewProduct}>Add Product</button>
                     <button className="btn-secondary btn-sm" onClick={() => setShowNewProduct(false)}>Cancel</button>
                   </div>
                 </div>

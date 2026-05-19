@@ -12,6 +12,7 @@ export default function Dashboard() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   });
   const [monthlyData, setMonthlyData] = useState(null);
+  const [expandedCategory, setExpandedCategory] = useState(null);
 
   const loadToday = async () => {
     setLoading(true);
@@ -133,14 +134,55 @@ export default function Dashboard() {
           <span className="badge badge-primary">{DEFAULT_PRODUCTS.length} products</span>
         </div>
         <div className="card-body">
-          <div className="grid-auto">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {CATEGORY_ORDER.map(cat => {
-              const count = DEFAULT_PRODUCTS.filter(p => p.category === cat).length;
+              const catProducts = DEFAULT_PRODUCTS.filter(p => p.category === cat);
+              const isExpanded = expandedCategory === cat;
               return (
-                <div key={cat} style={{ padding: 12, background: '#f9fafb', borderRadius: 8, border: '1px solid var(--border)' }}>
-                  <div className="text-xs text-muted mb-4">{CATEGORIES[cat].label}</div>
-                  <div className="font-bold">{count} items</div>
-                  <div className="text-xs text-muted">{CATEGORIES[cat].bottlesPerCase} per case</div>
+                <div key={cat} style={{ border: '1px solid var(--border, #e0e0e0)', borderRadius: 8, overflow: 'hidden' }}>
+                  <div
+                    onClick={() => setExpandedCategory(isExpanded ? null : cat)}
+                    style={{
+                      padding: '14px 18px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      background: isExpanded ? '#f1faff' : '#f9fafb',
+                      borderBottom: isExpanded ? '1px solid var(--border, #e0e0e0)' : 'none',
+                      transition: 'background 0.2s'
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#181c32' }}>{CATEGORIES[cat].label}</div>
+                      <div style={{ fontSize: '0.75rem', color: '#a1a5b7', marginTop: 2 }}>
+                        {catProducts.length} items | {CATEGORIES[cat].bottlesPerCase} per case
+                      </div>
+                    </div>
+                    <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--primary, #3699ff)' }}>
+                      {isExpanded ? '−' : '+'}
+                    </span>
+                  </div>
+                  {isExpanded && (
+                    <div style={{ padding: '12px 18px', background: 'white' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '2px solid #e0e0e0' }}>
+                            <th style={{ padding: '8px 6px', textAlign: 'left', fontWeight: 700, color: '#5e6278' }}>Code</th>
+                            <th style={{ padding: '8px 6px', textAlign: 'left', fontWeight: 700, color: '#5e6278' }}>Name</th>
+                            <th style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: '#5e6278' }}>Rate</th>
+                            <th style={{ padding: '8px 6px', textAlign: 'center', fontWeight: 700, color: '#5e6278' }}>Case Size</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {catProducts.map((p, idx) => (
+                            <tr key={p.id} style={{ borderBottom: '1px solid #f1f1f2', background: idx % 2 === 0 ? 'transparent' : '#fafbfc' }}>
+                              <td style={{ padding: '7px 6px', color: '#a1a5b7' }}>{p.codeNo || '—'}</td>
+                              <td style={{ padding: '7px 6px', fontWeight: 600 }}>{p.particular}</td>
+                              <td style={{ padding: '7px 6px', textAlign: 'right', color: '#181c32' }}>{p.rate > 0 ? `₹${p.rate}` : '—'}</td>
+                              <td style={{ padding: '7px 6px', textAlign: 'center', color: '#a1a5b7' }}>{CATEGORIES[cat].bottlesPerCase}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               );
             })}
