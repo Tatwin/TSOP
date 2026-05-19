@@ -1,20 +1,49 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import GlobalSearch from './GlobalSearch';
+import NotificationBell from './NotificationBell';
 
 const menuItems = [
   { path: '/', icon: '📊', label: 'Daily Sales', description: 'Enter daily stock data' },
   { path: '/invoice', icon: '🧾', label: 'Purchase Invoice', description: 'Add purchase invoices' },
   { path: '/dashboard', icon: '📈', label: 'Dashboard', description: 'Today & monthly summary' },
   { path: '/analytics', icon: '📉', label: 'Analytics', description: 'Sales insights & charts' },
-  { path: '/manage-products', icon: '⚙️', label: 'Manage Products', description: 'Add, edit, hide items' },
+  { path: '/activity-logs', icon: '📋', label: 'Activity Logs', description: 'Audit trail & history' },
+  { path: '/backup', icon: '💾', label: 'Backup', description: 'Backup & restore data' },
+  { path: '/manage-products', icon: '⚙️', label: 'Manage', description: 'Products, staff, users' },
 ];
 
 export default function Layout({ children }) {
-  const { authenticated, logout } = useAuth();
+  const { authenticated, user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  // Global keyboard shortcuts
+  useEffect(() => {
+    function handleGlobalKeys(e) {
+      // Ctrl+K or Cmd+K -> open search
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+      // Ctrl+S -> save (prevent default browser save)
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        // Dispatch custom event that pages can listen to
+        window.dispatchEvent(new CustomEvent('globalSave'));
+      }
+      // Escape -> close search
+      if (e.key === 'Escape' && searchOpen) {
+        setSearchOpen(false);
+      }
+    }
+    
+    document.addEventListener('keydown', handleGlobalKeys);
+    return () => document.removeEventListener('keydown', handleGlobalKeys);
+  }, [searchOpen]);
 
   return (
     <div className="app-layout">
@@ -79,12 +108,12 @@ export default function Layout({ children }) {
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               color: 'white', fontWeight: 700, fontSize: '0.85rem'
             }}>
-              A
+              {(user?.name || 'A')[0]}
             </div>
             <div>
-              <div style={{ color: '#fff', fontSize: '0.8rem', fontWeight: 600 }}>ANTONYSAMY.A</div>
+              <div style={{ color: '#fff', fontSize: '0.8rem', fontWeight: 600 }}>{user?.name || 'GUEST'}</div>
               <div style={{ color: 'var(--sidebar-text)', fontSize: '0.7rem' }}>
-                {authenticated ? '🟢 Unlocked' : '🔴 View Only'}
+                {authenticated ? `🟢 ${user?.role || 'admin'}` : '🔴 View Only'}
               </div>
             </div>
           </div>
@@ -116,14 +145,38 @@ export default function Layout({ children }) {
               </div>
             </div>
 
-            <div className="flex gap-12" style={{ alignItems: 'center' }}>
+            <div className="flex gap-8" style={{ alignItems: 'center' }}>
+              {/* Search Button */}
+              <button
+                onClick={() => setSearchOpen(true)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '7px 14px', borderRadius: 8,
+                  background: '#F4F6F4', border: '1px solid var(--border)',
+                  cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.8rem'
+                }}
+              >
+                <span>🔍</span>
+                <span style={{ fontWeight: 500 }}>Search</span>
+                <kbd style={{
+                  padding: '1px 5px', borderRadius: 3, background: 'white',
+                  border: '1px solid var(--border)', fontSize: '0.65rem', marginLeft: 4
+                }}>⌘K</kbd>
+              </button>
+
+              {/* Notifications */}
+              <NotificationBell />
+
+              {/* Auth Status */}
               {!authenticated && (
                 <button className="btn-light-primary btn-sm" onClick={() => navigate('/login')}>
-                  Enter PIN to Edit
+                  Enter PIN
                 </button>
               )}
               {authenticated && (
-                <span className="badge badge-success">Edit Mode</span>
+                <span className="badge badge-success" style={{ fontSize: '0.7rem' }}>
+                  {user?.role === 'admin' ? '👑 Admin' : user?.role === 'operator' ? '🔧 Operator' : '👁 Viewer'}
+                </span>
               )}
             </div>
           </div>
@@ -134,6 +187,9 @@ export default function Layout({ children }) {
           {children}
         </main>
       </div>
+
+      {/* Global Search Modal */}
+      <GlobalSearch isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
 
       {/* Mobile menu button (shown via CSS @media) */}
       <style>{`

@@ -1,16 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const { authMiddleware } = require('../middleware/auth');
-
-// In-memory denomination storage
-const denominations = {};
+const fileStore = require('../services/fileStore');
+const auditService = require('../services/auditService');
 
 const DENOMINATION_NOTES = [500, 200, 100, 50, 20, 10];
 
 // GET /api/denomination/:date - Get denomination for a date (NO AUTH - view is free)
 router.get('/:date', (req, res) => {
   const { date } = req.params;
-  const data = denominations[date];
+  const data = fileStore.getNested('denominations', date);
 
   res.json({
     date,
@@ -37,7 +36,9 @@ router.post('/:date', authMiddleware, (req, res) => {
     totalCash += count * note;
   });
 
-  denominations[date] = {
+  const previous = fileStore.getNested('denominations', date);
+
+  const denomination = {
     notes: DENOMINATION_NOTES.reduce((acc, note) => {
       const count = notes?.[note]?.count || 0;
       acc[note] = { count, value: count * note };
@@ -48,7 +49,19 @@ router.post('/:date', authMiddleware, (req, res) => {
     updatedAt: new Date().toISOString()
   };
 
-  res.json({ success: true, denomination: denominations[date] });
+  fileStore.setNested('denominations', date, denomination);
+
+  auditService.log({
+    action: 'UPDATE',
+    module: 'denomination',
+    user: req.user?.username || 'admin',
+    description: `Denomination saved for ${date}: Total Cash ₹${totalCash}`,
+    previousValue: previous ? { totalCash: previous.totalCash } : null,
+    newValue: { totalCash },
+    metadata: { date }
+  });
+
+  res.json({ success: true, denomination });
 });
 
 module.exports = router;

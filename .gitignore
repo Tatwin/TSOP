@@ -3,3 +3,5 @@ dist/
 .env
 *.log
 .DS_Store
+backend/data/backups/
+backend/data/store.json.tmp

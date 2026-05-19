@@ -1,0 +1,33 @@
+{
+  "dailyEntries": {},
+  "denominations": {},
+  "products": null,
+  "categories": null,
+  "staff": {
+    "salesmen": [
+      "SHANMUGASUNDARAM.P",
+      "ARUMUGAM.A",
+      "RAMESHKUMAR.A",
+      "SHANMUGASUNDARAM.M"
+    ],
+    "supervisors": [
+      "ANTONYSAMY.A",
+      "SARAVAN"
+    ]
+  },
+  "users": [
+    {
+      "id": "1",
+      "username": "admin",
+      "name": "ANTONYSAMY.A",
+      "role": "admin",
+      "pin": "1745"
+    }
+  ],
+  "auditLogs": [],
+  "settings": {
+    "shopNo": "1745",
+    "shopName": "TASMAC Shop No. 1745",
+    "address": "SF NO-1101/1A, Siruvani Main Road, Near H.P Petrol Bunk, Alandurai, Coimbatore-(North) -641101"
+  }
+}
