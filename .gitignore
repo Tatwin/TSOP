@@ -12,6 +12,7 @@ electron/src/firebase/serviceAccount.json
 *.db
 *.db-journal
 *.db-wal
+*.db-shm
 
 # Firebase
 .firebase/

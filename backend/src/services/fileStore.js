@@ -1,20 +1,23 @@
 /**
- * File-based persistence service for TASMAC POS
- * Reads/writes JSON to data/store.json
- * All data survives server restarts
+ * File Store Service - SQLite-backed (Drop-in replacement)
+ * 
+ * This module maintains the EXACT SAME API as the original JSON-based fileStore.
+ * All routes continue working without modification.
+ * Underneath, it delegates to database.js which uses better-sqlite3.
  */
-const fs = require('fs');
 const path = require('path');
+const database = require('./database');
 
+// Legacy constants (maintained for backward compatibility)
 const STORE_PATH = path.join(__dirname, '../../data/store.json');
-const BACKUP_DIR = path.join(__dirname, '../../data/backups');
+const BACKUP_DIR = database.BACKUP_DIR;
 
-// Default store structure
+// Default store structure (kept for reference and restore operations)
 const DEFAULT_STORE = {
-  dailyEntries: {},    // key: "YYYY-MM-DD"
-  denominations: {},   // key: "YYYY-MM-DD"
-  products: null,      // null = use defaults from products.js
-  categories: null,    // null = use defaults
+  dailyEntries: {},
+  denominations: {},
+  products: null,
+  categories: null,
   staff: {
     salesmen: ['SHANMUGASUNDARAM.P', 'ARUMUGAM.A', 'RAMESHKUMAR.A', 'SHANMUGASUNDARAM.M'],
     supervisors: ['ANTONYSAMY.A', 'SARAVAN']
@@ -23,7 +26,7 @@ const DEFAULT_STORE = {
     { id: '1', username: 'admin', name: 'ADMIN', role: 'admin', pin: '1974' },
     { id: '2', username: 'operator', name: 'SUPERVISOR', role: 'operator', pin: '1745' }
   ],
-  auditLogs: [],       // Array of audit entries
+  auditLogs: [],
   settings: {
     shopNo: '1745',
     shopName: 'TASMAC Shop No. 1745',
@@ -31,114 +34,164 @@ const DEFAULT_STORE = {
   }
 };
 
-let storeCache = null;
+// Auto-migrate from store.json on first load
+database.migrateFromJson(STORE_PATH);
 
 /**
- * Read store from disk (with caching)
+ * Read the entire store as a single object (legacy compatibility)
+ * Returns same shape as the old store.json
  */
 function readStore() {
-  if (storeCache) return storeCache;
-  
-  try {
-    if (fs.existsSync(STORE_PATH)) {
-      const raw = fs.readFileSync(STORE_PATH, 'utf8');
-      storeCache = JSON.parse(raw);
-      // Ensure all keys exist (migration support)
-      storeCache = { ...DEFAULT_STORE, ...storeCache };
-      return storeCache;
-    }
-  } catch (err) {
-    console.error('[FileStore] Error reading store:', err.message);
-  }
-  
-  // Initialize with defaults
-  storeCache = { ...DEFAULT_STORE };
-  writeStore(storeCache);
-  return storeCache;
+  return database.exportAsObject();
 }
 
 /**
- * Write store to disk (atomic write with temp file)
+ * Write the entire store at once (legacy compatibility)
+ * Used by backup upload/restore
  */
 function writeStore(data) {
-  try {
-    const dir = path.dirname(STORE_PATH);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    
-    const tempPath = STORE_PATH + '.tmp';
-    fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf8');
-    fs.renameSync(tempPath, STORE_PATH);
-    storeCache = data;
-  } catch (err) {
-    console.error('[FileStore] Error writing store:', err.message);
-    throw err;
+  database.restoreFromObject({ ...DEFAULT_STORE, ...data });
+}
+
+/**
+ * Get a section of the store by key
+ * Supports: products, staff, users, categories, dailyEntries, denominations, auditLogs, settings
+ */
+function get(key) {
+  switch (key) {
+    case 'products':
+      return database.getProducts();
+    case 'staff':
+      return database.getStaff();
+    case 'users':
+      return database.getUsers();
+    case 'categories':
+      return database.getCategories();
+    case 'dailyEntries':
+      return database.getAllDailyEntries();
+    case 'denominations':
+      return database.getAllDenominations();
+    case 'auditLogs':
+      return database.getAuditLogs();
+    case 'settings':
+      return database.getSettings();
+    default:
+      // For any unknown key, return null
+      return null;
   }
 }
 
 /**
- * Get a section of the store
- */
-function get(key) {
-  const store = readStore();
-  return store[key];
-}
-
-/**
- * Set a section of the store
+ * Set a section of the store by key
  */
 function set(key, value) {
-  const store = readStore();
-  store[key] = value;
-  writeStore(store);
+  switch (key) {
+    case 'products':
+      database.setProducts(value || []);
+      break;
+    case 'staff':
+      database.setStaff(value || { salesmen: [], supervisors: [] });
+      break;
+    case 'users':
+      database.setUsers(value || []);
+      break;
+    case 'categories':
+      database.setCategories(value || {});
+      break;
+    case 'dailyEntries':
+      database.setAllDailyEntries(value || {});
+      break;
+    case 'denominations':
+      database.setAllDenominations(value || {});
+      break;
+    case 'auditLogs':
+      database.setAuditLogs(value || []);
+      break;
+    case 'settings':
+      database.setAllSettings(value || {});
+      break;
+    default:
+      // Unknown key - ignore silently
+      break;
+  }
   return value;
 }
 
 /**
- * Update a nested key (e.g., dailyEntries['2024-01-15'])
- */
-function setNested(section, key, value) {
-  const store = readStore();
-  if (!store[section]) store[section] = {};
-  store[section][key] = value;
-  writeStore(store);
-  return value;
-}
-
-/**
- * Get a nested key
+ * Get a nested value (e.g., dailyEntries['2024-01-15'] or denominations['2024-01-15'])
  */
 function getNested(section, key) {
-  const store = readStore();
-  return store[section]?.[key] || null;
+  switch (section) {
+    case 'dailyEntries':
+      return database.getDailyEntry(key);
+    case 'denominations':
+      return database.getDenomination(key);
+    default:
+      // For other sections, fall back to getting the whole section
+      const data = get(section);
+      return data?.[key] || null;
+  }
+}
+
+/**
+ * Set a nested value
+ */
+function setNested(section, key, value) {
+  switch (section) {
+    case 'dailyEntries':
+      database.setDailyEntry(key, value);
+      break;
+    case 'denominations':
+      database.setDenomination(key, value);
+      break;
+    default:
+      // For other sections, get the whole object, update key, and set back
+      const data = get(section) || {};
+      data[key] = value;
+      set(section, data);
+      break;
+  }
+  return value;
 }
 
 /**
  * Delete a nested key
  */
 function deleteNested(section, key) {
-  const store = readStore();
-  if (store[section] && store[section][key]) {
-    delete store[section][key];
-    writeStore(store);
-    return true;
+  switch (section) {
+    case 'dailyEntries':
+      return database.deleteDailyEntry(key);
+    case 'denominations':
+      return database.deleteDenomination(key);
+    default:
+      // For other sections, get the whole object, delete key, set back
+      const data = get(section);
+      if (data && data[key]) {
+        delete data[key];
+        set(section, data);
+        return true;
+      }
+      return false;
   }
-  return false;
 }
 
 /**
  * Append to an array in the store (e.g., auditLogs)
  */
 function append(key, item) {
-  const store = readStore();
-  if (!Array.isArray(store[key])) store[key] = [];
-  store[key].push(item);
-  // Keep audit logs capped at 10000 entries
-  if (key === 'auditLogs' && store[key].length > 10000) {
-    store[key] = store[key].slice(-10000);
+  switch (key) {
+    case 'auditLogs':
+      database.appendAuditLog(item);
+      break;
+    default:
+      // For other array keys, get, push, set
+      const arr = get(key) || [];
+      if (Array.isArray(arr)) {
+        arr.push(item);
+        set(key, arr);
+      }
+      break;
   }
-  writeStore(store);
   return item;
 }
 
@@ -146,64 +199,29 @@ function append(key, item) {
  * Create a backup
  */
 function createBackup(label) {
-  if (!fs.existsSync(BACKUP_DIR)) {
-    fs.mkdirSync(BACKUP_DIR, { recursive: true });
-  }
-  
-  const store = readStore();
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const filename = `backup_${timestamp}${label ? '_' + label : ''}.json`;
-  const backupPath = path.join(BACKUP_DIR, filename);
-  
-  fs.writeFileSync(backupPath, JSON.stringify(store, null, 2), 'utf8');
-  
-  return { filename, path: backupPath, timestamp: new Date().toISOString(), size: JSON.stringify(store).length };
+  return database.createBackup(label);
 }
 
 /**
  * List available backups
  */
 function listBackups() {
-  if (!fs.existsSync(BACKUP_DIR)) return [];
-  
-  const files = fs.readdirSync(BACKUP_DIR)
-    .filter(f => f.endsWith('.json'))
-    .map(f => {
-      const stat = fs.statSync(path.join(BACKUP_DIR, f));
-      return {
-        filename: f,
-        size: stat.size,
-        createdAt: stat.mtime.toISOString()
-      };
-    })
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  
-  return files;
+  return database.listBackups();
 }
 
 /**
  * Restore from a backup file
  */
 function restoreBackup(filename) {
-  const backupPath = path.join(BACKUP_DIR, filename);
-  if (!fs.existsSync(backupPath)) {
-    throw new Error('Backup file not found');
-  }
-  
-  // Create a pre-restore backup first
-  createBackup('pre-restore');
-  
-  const raw = fs.readFileSync(backupPath, 'utf8');
-  const data = JSON.parse(raw);
-  writeStore({ ...DEFAULT_STORE, ...data });
-  return true;
+  return database.restoreBackup(filename);
 }
 
 /**
- * Invalidate cache (for testing)
+ * Invalidate cache (no-op for SQLite, kept for API compatibility)
+ * SQLite doesn't need cache invalidation since queries always hit the DB
  */
 function invalidateCache() {
-  storeCache = null;
+  // No-op - SQLite handles its own caching via WAL mode
 }
 
 module.exports = {
