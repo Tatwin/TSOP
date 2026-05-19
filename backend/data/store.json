@@ -21,7 +21,14 @@
       "username": "admin",
       "name": "ANTONYSAMY.A",
       "role": "admin",
-      "pin": "197"
+      "pin": "1974"
+    },
+    {
+      "id": "2",
+      "username": "operator",
+      "name": "RAMESHKUMAR.A",
+      "role": "operator",
+      "pin": "1745"
     }
   ],
   "auditLogs": [],
