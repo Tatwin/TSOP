@@ -22,6 +22,37 @@ router.get('/:date', authMiddleware, (req, res) => {
   });
 });
 
+// POST /api/daily-entry/:date/opening-stock - Save opening stock data
+router.post('/:date/opening-stock', authMiddleware, (req, res) => {
+  const { date } = req.params;
+  const { openingStock } = req.body;
+
+  if (!openingStock || typeof openingStock !== 'object') {
+    return res.status(400).json({ error: 'openingStock object required' });
+  }
+
+  if (!dailyData[date]) {
+    dailyData[date] = { entries: [], metadata: {} };
+  }
+
+  dailyData[date].openingStock = openingStock;
+  dailyData[date].updatedAt = new Date().toISOString();
+
+  // Also update entries if they exist
+  if (dailyData[date].entries?.length > 0) {
+    dailyData[date].entries = dailyData[date].entries.map(entry => ({
+      ...entry,
+      openingStock: openingStock[entry.productId] || entry.openingStock || 0
+    }));
+  }
+
+  res.json({
+    success: true,
+    date,
+    message: 'Opening stock saved successfully'
+  });
+});
+
 // GET /api/daily-entry/:date/opening-stock - Get opening stock (previous day's closing stock)
 router.get('/:date/opening-stock', authMiddleware, (req, res) => {
   const { date } = req.params;
@@ -92,6 +123,34 @@ router.put('/:date/metadata', authMiddleware, (req, res) => {
   };
 
   res.json({ success: true, metadata: dailyData[date].metadata });
+});
+
+// POST /api/daily-entry/:date/purchases - Save invoices and apply purchases
+router.post('/:date/purchases', authMiddleware, (req, res) => {
+  const { date } = req.params;
+  const { invoices, purchases } = req.body;
+
+  if (!dailyData[date]) {
+    dailyData[date] = { entries: [], metadata: {} };
+  }
+
+  dailyData[date].invoices = invoices || [];
+
+  // Apply purchase quantities to entries
+  if (purchases && dailyData[date].entries?.length > 0) {
+    dailyData[date].entries = dailyData[date].entries.map(entry => ({
+      ...entry,
+      purchase: purchases[entry.productId] || entry.purchase || 0
+    }));
+  }
+
+  dailyData[date].updatedAt = new Date().toISOString();
+
+  res.json({
+    success: true,
+    date,
+    message: 'Purchases saved successfully'
+  });
 });
 
 // GET /api/daily-entry/range/:startDate/:endDate - Get entries for a date range

@@ -107,7 +107,7 @@ export default function Analytics() {
   return (
     <div>
       <div className="card">
-        <h2 style={{ fontSize: '1.2rem', color: '#1a237e', marginBottom: '4px' }}>📊 Analytics Dashboard</h2>
+        <h2 style={{ fontSize: '1.2rem', color: '#1a237e', marginBottom: '4px' }}>Analytics Dashboard</h2>
         <p style={{ fontSize: '0.85rem', color: '#757575' }}>Sales insights and performance metrics</p>
       </div>
 
