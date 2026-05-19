@@ -33,6 +33,25 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Root route - show API status
+app.get('/', (req, res) => {
+  res.json({
+    name: 'TASMAC POS API',
+    shop: 'Shop No. 1745 - Alandurai, Coimbatore (North)',
+    status: 'running',
+    version: '1.0.0',
+    endpoints: {
+      health: '/api/health',
+      auth: '/api/auth/login',
+      products: '/api/products',
+      dailyEntry: '/api/daily-entry/:date',
+      denomination: '/api/denomination/:date',
+      export: '/api/export/daily',
+      dashboard: '/api/dashboard/today'
+    }
+  });
+});
+
 app.listen(PORT, () => {
   console.log(`TASMAC POS Backend running on port ${PORT}`);
 });
