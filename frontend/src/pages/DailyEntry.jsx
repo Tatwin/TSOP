@@ -688,103 +688,69 @@ export default function DailyEntry() {
               </button>
             </div>
             <div className="card-body">
-              <p className="text-muted text-sm" style={{ marginBottom: 16 }}>
-                Enter product code (or search by name) and press Enter to find product, then enter stock.
-              </p>
-
-              {/* Code/Name Input */}
+              {/* Search bar */}
               <div style={{ marginBottom: 16 }}>
-                <label className="form-label">Enter Product Code or Name</label>
                 <input
                   type="text"
                   value={osCodeInput}
-                  onChange={e => { setOsCodeInput(e.target.value); setOsNotFound(false); setOsFoundProduct(null); }}
-                  onKeyDown={handleOsCodeSearch}
-                  placeholder="Type code or product name and press Enter..."
-                  className="input-lg"
-                  style={{ textAlign: 'center', fontSize: '1.3rem', letterSpacing: 2, fontWeight: 700, maxWidth: 500 }}
-                  autoFocus
+                  onChange={e => setOsCodeInput(e.target.value)}
+                  placeholder="Search by code or product name to filter..."
+                  style={{ maxWidth: 400, padding: '10px 14px' }}
                 />
               </div>
 
-              {/* Product Found */}
-              {osFoundProduct && (
-                <div style={{ padding: 16, background: '#E8F5E9', borderRadius: 8, border: '1px solid var(--success)', marginBottom: 16 }}>
-                  <div className="flex-between mb-8">
-                    <div>
-                      <span className="text-muted" style={{ marginRight: 12 }}>{osFoundProduct.codeNo || '--'}</span>
-                      <span className="font-bold" style={{ fontSize: '1rem' }}>{osFoundProduct.particular}</span>
-                    </div>
-                    <span className="badge badge-primary">{'\u20B9'}{osFoundProduct.rate}</span>
-                  </div>
-                  <div className="flex gap-12" style={{ alignItems: 'flex-end', marginTop: 12 }}>
-                    <div style={{ flex: 1 }}>
-                      <label className="form-label">Opening Stock (bottles)</label>
-                      <input
-                        ref={osQtyRef}
-                        type="number" min="0"
-                        value={osQtyInput}
-                        onChange={e => setOsQtyInput(e.target.value)}
-                        onKeyDown={handleOsQtyKeyDown}
-                        placeholder="No. of bottles"
-                        style={{ textAlign: 'center', fontSize: '1.2rem', fontWeight: 700 }}
-                      />
-                    </div>
-                    <button className="btn-success" onClick={confirmOsEntry} disabled={!osQtyInput || Number(osQtyInput) <= 0}>Save & Next</button>
-                  </div>
-                </div>
-              )}
+              {/* Table with all products */}
+              <div className="table-wrapper" style={{ maxHeight: '60vh', overflow: 'auto' }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Code</th>
+                      <th>Product Name</th>
+                      <th>Category</th>
+                      <th>Rate</th>
+                      <th style={{ background: '#E8F5E9' }}>Opening Stock (bottles)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {entries
+                      .filter(e => {
+                        if (!osCodeInput.trim()) return true;
+                        const term = osCodeInput.toLowerCase();
+                        return e.codeNo.toLowerCase().includes(term) || e.particular.toLowerCase().includes(term);
+                      })
+                      .map(entry => (
+                      <tr key={entry.productId} style={entry.openingStock > 0 ? { background: '#E8F5E9' } : {}}>
+                        <td className="text-muted">{entry.codeNo || '--'}</td>
+                        <td className="font-bold">{entry.particular}</td>
+                        <td className="text-xs text-muted">{CATEGORIES[entry.category]?.label}</td>
+                        <td>{'\u20B9'}{entry.rate}</td>
+                        <td>
+                          <input
+                            type="number" min="0"
+                            value={entry.openingStock || ''}
+                            onChange={e => updateOpeningStock(entry.productId, e.target.value)}
+                            placeholder="0"
+                            style={{ width: 90, padding: '6px 8px', textAlign: 'center', border: '2px solid var(--primary)', fontWeight: 700 }}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
 
-              {/* Not Found */}
-              {osNotFound && (
-                <div style={{ padding: 12, background: '#FEE2E2', borderRadius: 8, border: '1px solid var(--danger)', marginBottom: 16 }}>
-                  <p className="font-bold text-danger">Product "{osCodeInput}" not found. Check code or try searching by name.</p>
-                </div>
-              )}
+              <div style={{ marginTop: 12, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                Products with stock entered: {entries.filter(e => e.openingStock > 0).length} / {entries.length}
+              </div>
             </div>
           </div>
-
-          {/* Running list of entered products */}
-          {osEnteredList.length > 0 && (
-            <div className="card">
-              <div className="card-header">
-                <h4 style={{ fontSize: '0.9rem' }}>Products Entered ({osEnteredList.length})</h4>
-              </div>
-              <div className="card-body" style={{ padding: '8px 16px' }}>
-                <div style={{ maxHeight: '40vh', overflow: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                        <th style={{ padding: '8px 6px', textAlign: 'left' }}>Code</th>
-                        <th style={{ padding: '8px 6px', textAlign: 'left' }}>Name</th>
-                        <th style={{ padding: '8px 6px', textAlign: 'right' }}>Rate</th>
-                        <th style={{ padding: '8px 6px', textAlign: 'right' }}>Stock</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {osEnteredList.map((item, idx) => (
-                        <tr key={idx} style={{ borderBottom: '1px solid var(--border)', background: idx % 2 === 0 ? 'transparent' : '#F4F6F4' }}>
-                          <td style={{ padding: '7px 6px', color: 'var(--text-muted)' }}>{item.codeNo || '--'}</td>
-                          <td style={{ padding: '7px 6px', fontWeight: 600 }}>{item.particular}</td>
-                          <td style={{ padding: '7px 6px', textAlign: 'right' }}>{'\u20B9'}{item.rate}</td>
-                          <td style={{ padding: '7px 6px', textAlign: 'right', fontWeight: 700, color: 'var(--primary)' }}>{item.stock}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       )}
 
 
       {/* === SUMMARY MODE === */}
       {mode === 'summary' && (
-        <div>
-          <CaseAbstract entries={entries} calcEntry={calcEntry} />
-        </div>
+        <CaseAbstract entries={entries} calcEntry={calcEntry} />
       )}
 
       {/* === 4. POS Amount (shown after entry complete or always in non-sequential modes) === */}
@@ -802,7 +768,7 @@ export default function DailyEntry() {
               <input
                 type="number" min="0" value={posAmount || ''}
                 onChange={e => setPosAmount(Number(e.target.value) || 0)}
-                placeholder="{'\u20B9'} 0"
+                placeholder="0"
                 style={{ width: 180, textAlign: 'center', fontSize: '1.3rem', fontWeight: 700 }}
               />
             </div>
