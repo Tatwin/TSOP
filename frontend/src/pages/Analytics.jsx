@@ -189,8 +189,7 @@ export default function Analytics() {
     { id: 'category', label: 'Category' },
     { id: 'top', label: 'Top Items' },
     { id: 'notsold', label: 'Not Sold' },
-    { id: 'monthly', label: 'Monthly' },
-    { id: 'profitable', label: 'Profitable' }
+    { id: 'monthly', label: 'Monthly' }
   ];
 
   if (loading && !dataLoaded) {
@@ -479,79 +478,6 @@ export default function Analytics() {
               </div>
             </>
           )}
-        </div>
-      )}
-
-      {/* Most Profitable */}
-      {activeTab === 'profitable' && (
-        <div className="card">
-          <h3 style={{ marginBottom: '16px', fontSize: '1rem' }}>Most Profitable Items (by Rate)</h3>
-          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
-            Highest-priced items that contribute most to revenue per bottle sold
-          </p>
-          <div className="table-wrapper">
-            <table>
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Product</th>
-                  <th>Category</th>
-                  <th>Rate</th>
-                  <th>Revenue Potential</th>
-                </tr>
-              </thead>
-              <tbody>
-                {DEFAULT_PRODUCTS
-                  .filter(p => p.rate > 0)
-                  .sort((a, b) => b.rate - a.rate)
-                  .slice(0, 15)
-                  .map((item, idx) => (
-                    <tr key={item.id}>
-                      <td style={{ fontWeight: '700' }}>{idx + 1}</td>
-                      <td style={{ fontWeight: '600' }}>{item.particular}</td>
-                      <td style={{ fontSize: '0.8rem' }}>{CATEGORIES[item.category]?.label}</td>
-                      <td style={{ fontWeight: '700', color: 'var(--primary)' }}>{'\u20B9'}{formatINR(item.rate)}</td>
-                      <td>
-                        <div style={{ height: '16px', background: '#F4F6F4', borderRadius: '4px', overflow: 'hidden' }}>
-                          <div style={{
-                            height: '100%',
-                            width: `${Math.min((item.rate / 3000) * 100, 100)}%`,
-                            background: 'linear-gradient(90deg, #0E6633, #2EAD62)',
-                            borderRadius: '4px'
-                          }} />
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                }
-              </tbody>
-            </table>
-          </div>
-
-          <h3 style={{ marginTop: '24px', marginBottom: '16px', fontSize: '1rem' }}>Category Summary</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-            {CATEGORY_ORDER.map(cat => {
-              const count = DEFAULT_PRODUCTS.filter(p => p.category === cat).length;
-              const avgRate = Math.floor(
-                DEFAULT_PRODUCTS.filter(p => p.category === cat).reduce((s, p) => s + (p.rate || 0), 0) / (count || 1)
-              );
-              const catData = categoryBreakdown[cat];
-              return (
-                <div key={cat} style={{
-                  padding: '12px', background: '#F4F6F4', borderRadius: '8px',
-                  border: '1px solid var(--border)'
-                }}>
-                  <div style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--primary)', marginBottom: '4px' }}>
-                    {CATEGORIES[cat].label}
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                    {count} products | Avg {'\u20B9'}{avgRate}
-                    {catData && catData.sales > 0 ? ` | Sales: \u20B9${formatINR(catData.sales)}` : ''}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
         </div>
       )}
     </div>

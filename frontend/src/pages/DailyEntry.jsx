@@ -26,8 +26,12 @@ export default function DailyEntry() {
   const [selectedSupervisors, setSelectedSupervisors] = useState([]);
 
 
+  // Stock return state
+  const [srCodeInput, setSrCodeInput] = useState('');
+  const [srReturnList, setSrReturnList] = useState([]);
+
   // UI state
-  const [mode, setMode] = useState('sequential'); // 'sequential' | 'table' | 'summary' | 'openingStock'
+  const [mode, setMode] = useState('sequential'); // 'sequential' | 'table' | 'summary' | 'openingStock' | 'stockReturn'
   const [currentIndex, setCurrentIndex] = useState(0);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState('');
@@ -350,7 +354,7 @@ export default function DailyEntry() {
 
             <div className="flex gap-8" style={{ alignItems: 'center' }}>
               <div className="flex gap-4" style={{ background: '#F4F6F4', borderRadius: 8, padding: 3 }}>
-                {[{id:'sequential',label:'Daily Sales'},{id:'openingStock',label:'Opening Stock'},{id:'summary',label:'Summary'},{id:'table',label:'Table'}].map(m => (
+                {[{id:'sequential',label:'Daily Sales'},{id:'openingStock',label:'Opening Stock'},{id:'stockReturn',label:'Stock Return'},{id:'summary',label:'Summary'},{id:'table',label:'Table'}].map(m => (
                   <button key={m.id} onClick={() => { setMode(m.id); setEntryComplete(false); }}
                     style={{
                       padding: '6px 14px', borderRadius: 6, fontSize: '0.8rem', fontWeight: 600, border: 'none',
@@ -379,8 +383,7 @@ export default function DailyEntry() {
       </div>
 
 
-      {/* === Staff Selection === */}
-      {mode === 'sequential' && entryComplete && (
+      {/* === Staff Selection (always visible) === */}
       <div className="card">
         <div className="card-header">
           <h3>Staff on Duty</h3>
@@ -444,7 +447,6 @@ export default function DailyEntry() {
           </div>
         </div>
       </div>
-      )}
 
 
       {/* === 2. Stats Bar === */}
@@ -755,6 +757,105 @@ export default function DailyEntry() {
       {/* === SUMMARY MODE === */}
       {mode === 'summary' && (
         <CaseAbstract entries={entries} calcEntry={calcEntry} />
+      )}
+
+      {/* === STOCK RETURN MODE === */}
+      {mode === 'stockReturn' && (
+        <div>
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div className="card-header">
+              <h3>Stock Return to Depot</h3>
+            </div>
+            <div className="card-body">
+              <p className="text-xs text-muted" style={{ marginBottom: 16 }}>
+                Enter product code or name, then the number of bottles returned to depot.
+              </p>
+
+              {/* Search and enter */}
+              <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 16 }}>
+                <div style={{ flex: '1 1 200px' }}>
+                  <label className="form-label">Product Code / Name</label>
+                  <input
+                    type="text"
+                    value={srCodeInput}
+                    onChange={e => setSrCodeInput(e.target.value)}
+                    placeholder="Type code or product name..."
+                    style={{ padding: '10px 14px', width: '100%' }}
+                  />
+                </div>
+              </div>
+
+              {/* Filtered product list with return input */}
+              <div className="table-wrapper" style={{ maxHeight: '55vh', overflow: 'auto' }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Code</th>
+                      <th>Product Name</th>
+                      <th>Category</th>
+                      <th>Current Return</th>
+                      <th style={{ background: '#FEE2E2' }}>Bottles to Return</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {entries
+                      .filter(e => {
+                        if (!srCodeInput.trim()) return e.stockReturn > 0 || (e.openingStock > 0 || e.purchase > 0);
+                        const term = srCodeInput.toLowerCase();
+                        return e.codeNo.toLowerCase().includes(term) || e.particular.toLowerCase().includes(term);
+                      })
+                      .map(entry => (
+                      <tr key={entry.productId} style={entry.stockReturn > 0 ? { background: '#FEE2E2' } : {}}>
+                        <td className="text-muted">{entry.codeNo || '--'}</td>
+                        <td className="font-bold">{entry.particular}</td>
+                        <td className="text-xs text-muted">{CATEGORIES[entry.category]?.label}</td>
+                        <td style={{ fontWeight: 700, color: entry.stockReturn > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>
+                          {entry.stockReturn || 0}
+                        </td>
+                        <td>
+                          <input
+                            type="number" min="0"
+                            value={entry.stockReturn || ''}
+                            onChange={e => {
+                              const val = Number(e.target.value) || 0;
+                              setEntries(prev => prev.map(en =>
+                                en.productId === entry.productId ? { ...en, stockReturn: val } : en
+                              ));
+                            }}
+                            placeholder="0"
+                            style={{ width: 80, padding: '6px 8px', textAlign: 'center', border: '2px solid var(--danger)', fontWeight: 700 }}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Summary of returns */}
+              {entries.filter(e => e.stockReturn > 0).length > 0 && (
+                <div style={{ marginTop: 16, padding: '12px 16px', background: '#FEE2E2', borderRadius: 8 }}>
+                  <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--danger)', marginBottom: 8 }}>
+                    Return Summary: {entries.filter(e => e.stockReturn > 0).length} products
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {entries.filter(e => e.stockReturn > 0).map(e => (
+                      <span key={e.productId} style={{
+                        padding: '4px 10px', background: 'white', borderRadius: 6,
+                        fontSize: '0.78rem', fontWeight: 600, border: '1px solid var(--danger)'
+                      }}>
+                        {e.particular}: {e.stockReturn} btl
+                      </span>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: 8, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    Total bottles returned: {entries.reduce((s, e) => s + (e.stockReturn || 0), 0)}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* === 4. POS Amount === */}
