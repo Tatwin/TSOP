@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const { securityHeaders, rateLimiter, validateInput, requestLogger, errorHandler } = require('./middleware/security');
 
 const authRoutes = require('./routes/auth');
 const productsRoutes = require('./routes/products');
@@ -15,13 +16,23 @@ const notificationRoutes = require('./routes/notifications');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Middleware
+// ===== Security Middleware (applied FIRST) =====
+app.use(securityHeaders);
+app.use(requestLogger);
+
+// CORS
 app.use(cors({
   origin: true,
   credentials: true
 }));
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Body parsing with size limits
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Rate limiting and input validation
+app.use(rateLimiter);
+app.use(validateInput);
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -34,9 +45,55 @@ app.use('/api/audit', auditRoutes);
 app.use('/api/backup', backupRoutes);
 app.use('/api/notifications', notificationRoutes);
 
-// Health check
+// Reliability service - startup check
+const reliability = require('./services/reliability');
+const startupResult = reliability.startupCheck();
+if (startupResult.status !== 'healthy') {
+  console.warn(`[Startup] Database status: ${startupResult.status}`, startupResult.details);
+}
+
+// Health check (enhanced with reliability data)
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  const health = reliability.quickHealthCheck();
+  const resources = reliability.getResourceStatus();
+  res.json({
+    status: health.healthy ? 'ok' : 'degraded',
+    timestamp: new Date().toISOString(),
+    database: health.checks,
+    resources: {
+      memoryMB: resources.memory.rss,
+      dbSize: resources.database.sizeFormatted,
+      uptime: resources.uptime
+    }
+  });
+});
+
+// Reliability endpoints
+app.get('/api/health/detailed', (req, res) => {
+  const integrity = reliability.checkDatabaseIntegrity();
+  const health = reliability.quickHealthCheck();
+  const resources = reliability.getResourceStatus();
+  const crashes = reliability.getCrashLogs(5);
+  const healthHistory = reliability.getHealthHistory(10);
+  
+  res.json({
+    integrity,
+    health,
+    resources,
+    recentCrashes: crashes,
+    healthHistory,
+    startupResult
+  });
+});
+
+app.post('/api/health/repair', (req, res) => {
+  const result = reliability.attemptRepair();
+  res.json(result);
+});
+
+app.post('/api/health/restore-latest', (req, res) => {
+  const result = reliability.restoreLatestBackup();
+  res.json(result);
 });
 
 // Root route - show API status
@@ -63,15 +120,33 @@ app.get('/', (req, res) => {
   });
 });
 
-// Global error handler
-app.use((err, req, res, next) => {
-  console.error('[Error]', err.message);
-  res.status(500).json({ error: 'Internal server error', message: err.message });
-});
+// Global error handler (from security middleware - never exposes stack in production)
+app.use(errorHandler);
 
-app.listen(PORT, () => {
-  console.log(`TASMAC POS Backend v2.0 running on port ${PORT}`);
-  console.log(`Features: File Persistence, Audit Logs, Backup/Restore, Analytics`);
-});
+/**
+ * Start the server.
+ * When required as a module (e.g., inside Electron), call startServer() manually.
+ * When run directly (node index.js), starts automatically.
+ */
+function startServer(port) {
+  const p = port || PORT;
+  return new Promise((resolve, reject) => {
+    const server = app.listen(p, () => {
+      console.log(`TASMAC POS Backend v2.0 running on port ${p}`);
+      console.log(`Features: SQLite, Audit Logs, Backup/Restore, Analytics, Notifications`);
+      resolve(server);
+    });
+    server.on('error', reject);
+  });
+}
+
+// Auto-start when run directly (not imported)
+if (require.main === module) {
+  startServer().catch(err => {
+    console.error('Failed to start server:', err.message);
+    process.exit(1);
+  });
+}
 
 module.exports = app;
+module.exports.startServer = startServer;

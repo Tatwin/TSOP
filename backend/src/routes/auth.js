@@ -1,15 +1,22 @@
 const express = require('express');
 const router = express.Router();
 const { generateToken, authMiddleware, requireRole, ROLES } = require('../middleware/auth');
+const { checkLoginLockout, recordFailedLogin, resetLoginAttempts } = require('../middleware/security');
 const fileStore = require('../services/fileStore');
 const auditService = require('../services/auditService');
 
-// POST /api/auth/login - PIN-based login
-router.post('/login', (req, res) => {
+// POST /api/auth/login - PIN-based login (with brute force protection)
+router.post('/login', checkLoginLockout, (req, res) => {
   const { pin } = req.body;
+  const ip = req.ip || req.connection?.remoteAddress || 'unknown';
 
   if (!pin) {
     return res.status(400).json({ error: 'PIN is required' });
+  }
+
+  // Validate PIN format (digits only, 3-8 chars)
+  if (!/^\d{3,8}$/.test(pin)) {
+    return res.status(400).json({ error: 'PIN must be 3-8 digits' });
   }
 
   // Check against stored users
@@ -17,6 +24,7 @@ router.post('/login', (req, res) => {
   const user = users.find(u => u.pin === pin);
 
   if (!user) {
+    recordFailedLogin(ip);
     auditService.log({
       action: 'LOGIN',
       module: 'auth',
@@ -27,6 +35,8 @@ router.post('/login', (req, res) => {
     return res.status(401).json({ error: 'Invalid PIN' });
   }
 
+  // Success - reset lockout counter
+  resetLoginAttempts(ip);
   const token = generateToken(user);
   
   auditService.log({

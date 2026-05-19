@@ -140,9 +140,12 @@ function setNested(section, key, value) {
   switch (section) {
     case 'dailyEntries':
       database.setDailyEntry(key, value);
+      // Queue for Firebase sync
+      queueForSync('dailyEntries', key, 'UPSERT', value);
       break;
     case 'denominations':
       database.setDenomination(key, value);
+      queueForSync('denominations', key, 'UPSERT', value);
       break;
     default:
       // For other sections, get the whole object, update key, and set back
@@ -224,6 +227,21 @@ function invalidateCache() {
   // No-op - SQLite handles its own caching via WAL mode
 }
 
+/**
+ * Queue a change for Firebase sync (non-blocking)
+ * Only queues if sync is conceptually enabled (the actual push is handled by syncService in Electron)
+ */
+function queueForSync(tableName, recordId, operation, data) {
+  try {
+    // Map UPSERT to UPDATE for the CHECK constraint
+    const op = operation === 'UPSERT' ? 'UPDATE' : operation;
+    database.addToSyncQueue(tableName, recordId, op, data);
+  } catch (err) {
+    // Never let sync queue failures affect the main operation
+    // This is intentionally silent - sync is secondary to local data
+  }
+}
+
 module.exports = {
   readStore,
   writeStore,
@@ -237,6 +255,7 @@ module.exports = {
   listBackups,
   restoreBackup,
   invalidateCache,
+  queueForSync,
   DEFAULT_STORE,
   STORE_PATH,
   BACKUP_DIR

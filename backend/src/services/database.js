@@ -754,6 +754,80 @@ console.log('[Database] SQLite initialized at', DB_PATH);
 // ============================================================
 // Module Exports
 // ============================================================
+// ============================================================
+// Sync Queue Operations
+// ============================================================
+
+/**
+ * Add an item to the pending sync queue
+ * Called automatically when data is modified and sync is enabled
+ */
+function addToSyncQueue(tableName, recordId, operation, data) {
+  const id = Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
+  const deviceId = getDeviceId();
+  exec(`INSERT INTO pending_sync (table_name, record_id, operation, data, device_id, sync_version) VALUES (${escSql(tableName)}, ${escSql(recordId)}, ${escSql(operation)}, ${escSql(JSON.stringify(data))}, ${escSql(deviceId)}, 1)`);
+}
+
+/**
+ * Get pending (unsynced) items from the queue
+ * @param {number} limit - Max items to return
+ */
+function getPendingSyncItems(limit = 50) {
+  const rows = query(`SELECT id, table_name, record_id, operation, data, created_at, device_id FROM pending_sync WHERE synced = 0 ORDER BY created_at ASC LIMIT ${Number(limit)}`);
+  return rows.map(row => ({
+    id: row.id,
+    table_name: row.table_name,
+    record_id: row.record_id,
+    operation: row.operation,
+    data: row.data,
+    created_at: row.created_at,
+    device_id: row.device_id
+  }));
+}
+
+/**
+ * Mark items as synced
+ * @param {number[]} ids - Array of pending_sync row IDs to mark
+ */
+function markSynced(ids) {
+  if (!ids || ids.length === 0) return;
+  const idList = ids.map(id => Number(id)).join(',');
+  exec(`UPDATE pending_sync SET synced = 1 WHERE id IN (${idList})`);
+}
+
+/**
+ * Clean old synced items (keep queue manageable)
+ * @param {number} olderThanDays - Remove synced items older than N days
+ */
+function cleanSyncQueue(olderThanDays = 7) {
+  exec(`DELETE FROM pending_sync WHERE synced = 1 AND created_at < datetime('now', '-${Number(olderThanDays)} days')`);
+}
+
+/**
+ * Get sync queue statistics
+ */
+function getSyncStats() {
+  const pending = queryOne("SELECT COUNT(*) as cnt FROM pending_sync WHERE synced = 0");
+  const synced = queryOne("SELECT COUNT(*) as cnt FROM pending_sync WHERE synced = 1");
+  const oldest = queryOne("SELECT created_at FROM pending_sync WHERE synced = 0 ORDER BY created_at ASC LIMIT 1");
+  return {
+    pendingCount: pending ? pending.cnt : 0,
+    syncedCount: synced ? synced.cnt : 0,
+    oldestPending: oldest ? oldest.created_at : null
+  };
+}
+
+/**
+ * Get a unique device ID (generated on first run, stored in settings)
+ */
+function getDeviceId() {
+  const settings = getSettings();
+  if (settings.deviceId) return settings.deviceId;
+  const id = 'dev_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 8);
+  setSetting('deviceId', id);
+  return id;
+}
+
 module.exports = {
   // Settings
   getSettings,
@@ -795,6 +869,12 @@ module.exports = {
   exportAsObject,
   // Migration
   migrateFromJson,
+  // Sync Queue
+  addToSyncQueue,
+  getPendingSyncItems,
+  markSynced,
+  cleanSyncQueue,
+  getSyncStats,
   // Constants
   DB_PATH,
   DB_DIR,

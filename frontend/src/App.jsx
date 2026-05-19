@@ -11,6 +11,7 @@ import ManageProducts from './pages/ManageProducts';
 import Analytics from './pages/Analytics';
 import ActivityLogs from './pages/ActivityLogs';
 import BackupRestore from './pages/BackupRestore';
+import WebDashboard from './pages/WebDashboard';
 import Layout from './components/Layout';
 
 function App() {
@@ -54,6 +55,11 @@ function App() {
               <Route path="/backup" element={
                 <Layout>
                   <BackupRestore />
+                </Layout>
+              } />
+              <Route path="/web-dashboard" element={
+                <Layout>
+                  <WebDashboard />
                 </Layout>
               } />
               <Route path="*" element={<Navigate to="/" replace />} />

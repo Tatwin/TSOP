@@ -1,305 +1,567 @@
 /**
- * TASMAC POS - Electron Main Process
+ * TASMAC POS v2.0 - Electron Main Process
  * 
  * Architecture:
- *   Electron App
- *   ├── React Frontend (renderer)
- *   ├── Express Backend (embedded HTTP server for API compatibility)
- *   ├── SQLite Database (local persistence via better-sqlite3)
- *   ├── Auto Backup (scheduled every 6 hours)
- *   └── Firebase Sync (optional, for web dashboard)
+ *   Electron App (single process)
+ *   ├── React Frontend (renderer, loaded from built files or dev server)
+ *   ├── Express Backend (embedded IN-PROCESS, no child process)
+ *   ├── SQLite Database (via database.js service)
+ *   ├── Auto Backup (VACUUM INTO, 30-min interval, 20 max retention)
+ *   └── Firebase Sync (optional, queue-based, 5-min interval)
  *            │
  *            ▼
- *         Web Dashboard (Vercel/Firebase Hosting)
+ *         Web Dashboard (reads from Firestore, read-only)
+ *
+ * IMPORTANT: The Express server runs inside the same Node.js process as Electron.
+ * This means:
+ *   - No need to spawn a child process
+ *   - No port conflicts
+ *   - Shared memory/state if needed
+ *   - Clean shutdown guaranteed
+ *   - User never needs to run anything manually
  */
-const { app, BrowserWindow, Menu, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, Menu, Tray, ipcMain, dialog, shell, nativeImage } = require('electron');
 const path = require('path');
-const { spawn } = require('child_process');
+const fs = require('fs');
 
-let mainWindow;
-let backendProcess;
-let database;
-let autoBackup;
-let firebase;
-let syncService;
+// ===== GLOBAL STATE =====
+let mainWindow = null;
+let tray = null;
+let expressServer = null;
+let autoBackupTimer = null;
+let syncTimer = null;
+let isQuitting = false;
 
-// ===== APP INITIALIZATION =====
+const isDev = process.env.NODE_ENV === 'development';
+const BACKEND_PORT = 5000;
 
-app.whenReady().then(async () => {
-  console.log('=== TASMAC POS v2.0 Desktop ===');
-  console.log(`Platform: ${process.platform}`);
-  console.log(`App Path: ${app.getPath('userData')}`);
-  
-  // 1. Initialize SQLite database
-  database = require('./src/database');
-  database.initialize();
-  
-  // 2. Initialize Firebase (optional - works without it)
-  firebase = require('./src/firebase/config');
-  const firebaseReady = firebase.initialize();
-  
-  // 3. Start sync service (if Firebase available)
-  syncService = require('./src/firebase/syncService');
-  if (firebaseReady) {
-    syncService.start(database, firebase);
+// App data paths
+const USER_DATA = app.getPath('userData');
+const DOCUMENTS = app.getPath('documents');
+const BACKUP_DIR = path.join(DOCUMENTS, 'TSOP_Backups');
+
+// ===== SINGLE INSTANCE LOCK =====
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+}
+
+app.on('second-instance', () => {
+  // Someone tried to run a second instance - focus our window
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
   }
-  
-  // 4. Start auto-backup service
-  autoBackup = require('./src/backup/autoBackup');
-  autoBackup.start(database);
-  
-  // 5. Start embedded Express backend (for API compatibility with React frontend)
-  startBackend();
-  
-  // 6. Create window (after backend starts)
-  setTimeout(() => {
-    createWindow();
-  }, 1500);
-  
-  // 7. Register all IPC handlers
-  registerIpcHandlers();
 });
 
-// ===== WINDOW MANAGEMENT =====
+// ===== APP INITIALIZATION =====
+app.whenReady().then(async () => {
+  console.log('╔══════════════════════════════════════╗');
+  console.log('║   TASMAC POS v2.0 - Desktop App     ║');
+  console.log('║   Shop No. 1745 - Alandurai          ║');
+  console.log('╚══════════════════════════════════════╝');
+  console.log(`Platform: ${process.platform} | Arch: ${process.arch}`);
+  console.log(`User Data: ${USER_DATA}`);
+  console.log(`Backups: ${BACKUP_DIR}`);
+  console.log(`Mode: ${isDev ? 'DEVELOPMENT' : 'PRODUCTION'}`);
+  console.log('');
 
-function createWindow() {
+  try {
+    // 1. Start the embedded Express backend (in-process)
+    await startEmbeddedBackend();
+    
+    // 2. Create the main window
+    createMainWindow();
+    
+    // 3. Register IPC handlers
+    registerIpcHandlers();
+    
+    // 4. Start auto-backup service
+    startAutoBackup();
+    
+    // 5. Start Firebase sync (if configured)
+    startFirebaseSync();
+    
+    console.log('[App] All services started successfully');
+  } catch (err) {
+    console.error('[App] FATAL: Startup failed:', err.message);
+    dialog.showErrorBox('Startup Error', 
+      `TASMAC POS failed to start:\n\n${err.message}\n\nPlease try restarting the application.`
+    );
+    app.quit();
+  }
+});
+
+// ===== EMBEDDED EXPRESS BACKEND =====
+async function startEmbeddedBackend() {
+  console.log('[Backend] Starting embedded Express server...');
+  
+  // Set the working directory for the backend (so relative paths in routes work)
+  const backendDir = path.join(__dirname, '..', 'backend');
+  process.chdir(backendDir);
+  
+  // Require the Express app (this loads all routes, services, etc.)
+  const backendApp = require(path.join(backendDir, 'src', 'index.js'));
+  
+  // Start listening
+  expressServer = await backendApp.startServer(BACKEND_PORT);
+  console.log(`[Backend] Express server running on port ${BACKEND_PORT} (embedded)`);
+}
+
+// ===== MAIN WINDOW =====
+function createMainWindow() {
   mainWindow = new BrowserWindow({
-    width: 1400,
+    width: 1440,
     height: 900,
-    minWidth: 800,
-    minHeight: 600,
+    minWidth: 900,
+    minHeight: 650,
     title: 'TASMAC POS - Shop No. 1745',
-    icon: path.join(__dirname, 'icon.png'),
+    icon: getIconPath(),
+    show: false, // Show after ready-to-show
+    backgroundColor: '#F4F6F4',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js')
+      sandbox: true,
+      preload: path.join(__dirname, 'preload.js'),
+      // Security: disable dangerous features
+      allowRunningInsecureContent: false,
+      experimentalFeatures: false,
+      webviewTag: false
     }
   });
 
-  const isDev = process.env.NODE_ENV === 'development';
-  
+  // Show window when ready (prevents white flash)
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+    mainWindow.focus();
+  });
+
+  // Load content
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools();
+    mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
-    mainWindow.loadFile(path.join(__dirname, '..', 'frontend', 'dist', 'index.html'));
+    // Production: load built frontend
+    const indexPath = path.join(__dirname, '..', 'frontend', 'dist', 'index.html');
+    if (fs.existsSync(indexPath)) {
+      mainWindow.loadFile(indexPath);
+    } else {
+      // Fallback: connect to embedded Express which can serve the API
+      mainWindow.loadURL(`http://localhost:${BACKEND_PORT}`);
+    }
   }
 
-  // Clean menu for production
-  if (!isDev) {
-    Menu.setApplicationMenu(null);
-  }
+  // Application menu
+  setupMenu();
+
+  // Window events
+  mainWindow.on('close', (e) => {
+    if (!isQuitting) {
+      e.preventDefault();
+      mainWindow.hide();
+      return;
+    }
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  // Open external links in default browser
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http')) shell.openExternal(url);
+    return { action: 'deny' };
+  });
+
+  // Prevent navigation away from app
+  mainWindow.webContents.on('will-navigate', (e, url) => {
+    const appOrigins = ['http://localhost:5173', 'http://localhost:5000', 'file://'];
+    if (!appOrigins.some(origin => url.startsWith(origin))) {
+      e.preventDefault();
+      shell.openExternal(url);
+    }
+  });
 }
 
-// ===== EMBEDDED BACKEND =====
+// ===== AUTO BACKUP SERVICE =====
+function startAutoBackup() {
+  // Ensure backup directory exists
+  if (!fs.existsSync(BACKUP_DIR)) {
+    fs.mkdirSync(BACKUP_DIR, { recursive: true });
+  }
 
-function startBackend() {
-  const backendPath = path.join(__dirname, '..', 'backend', 'src', 'index.js');
-  backendProcess = spawn('node', [backendPath], {
-    env: { ...process.env, PORT: '5000', NODE_ENV: process.env.NODE_ENV || 'production' },
-    cwd: path.join(__dirname, '..', 'backend')
-  });
+  const BACKUP_INTERVAL = 30 * 60 * 1000; // 30 minutes
+  const MAX_BACKUPS = 20;
+
+  const runBackup = () => {
+    try {
+      const fileStore = require(path.join(__dirname, '..', 'backend', 'src', 'services', 'fileStore'));
+      const result = fileStore.createBackup('auto');
+      console.log(`[AutoBackup] Created: ${result.filename} (${(result.size / 1024).toFixed(1)} KB)`);
+      
+      // Cleanup old backups (keep only MAX_BACKUPS)
+      const backups = fileStore.listBackups();
+      const autoBackups = backups.filter(b => b.filename.includes('_auto'));
+      if (autoBackups.length > MAX_BACKUPS) {
+        const toDelete = autoBackups.slice(MAX_BACKUPS);
+        toDelete.forEach(b => {
+          const filePath = path.join(fileStore.BACKUP_DIR, b.filename);
+          if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+            console.log(`[AutoBackup] Cleaned: ${b.filename}`);
+          }
+        });
+      }
+
+      // Notify renderer
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('backup:complete', result);
+      }
+    } catch (err) {
+      console.error('[AutoBackup] Failed:', err.message);
+    }
+  };
+
+  // First backup after 2 minutes
+  setTimeout(runBackup, 2 * 60 * 1000);
   
-  backendProcess.stdout.on('data', (data) => {
-    console.log(`[Backend] ${data.toString().trim()}`);
-  });
-  
-  backendProcess.stderr.on('data', (data) => {
-    console.error(`[Backend Error] ${data.toString().trim()}`);
-  });
-  
-  backendProcess.on('exit', (code) => {
-    console.log(`[Backend] Process exited with code ${code}`);
-  });
+  // Then every 30 minutes
+  autoBackupTimer = setInterval(runBackup, BACKUP_INTERVAL);
+  console.log(`[AutoBackup] Scheduled every ${BACKUP_INTERVAL / 60000} minutes (max ${MAX_BACKUPS} kept)`);
+}
+
+// ===== FIREBASE SYNC =====
+function startFirebaseSync() {
+  try {
+    const firebaseConfig = path.join(__dirname, 'src', 'firebase', 'config.js');
+    if (!fs.existsSync(firebaseConfig)) {
+      console.log('[Sync] Firebase config not found - sync disabled');
+      return;
+    }
+
+    const firebase = require(firebaseConfig);
+    const available = firebase.initialize();
+    
+    if (!available) {
+      console.log('[Sync] Firebase not configured - sync disabled (app works offline)');
+      return;
+    }
+
+    const syncService = require(path.join(__dirname, 'src', 'firebase', 'syncService.js'));
+    const fileStore = require(path.join(__dirname, '..', 'backend', 'src', 'services', 'fileStore'));
+    
+    // Process sync queue every 5 minutes
+    const SYNC_INTERVAL = 5 * 60 * 1000;
+    syncTimer = setInterval(() => {
+      syncService.processQueue && syncService.processQueue();
+    }, SYNC_INTERVAL);
+    
+    console.log('[Sync] Firebase sync active (every 5 minutes)');
+  } catch (err) {
+    console.log('[Sync] Firebase initialization skipped:', err.message);
+  }
 }
 
 // ===== IPC HANDLERS =====
-
 function registerIpcHandlers() {
   // --- App Info ---
   ipcMain.handle('app:version', () => app.getVersion());
   ipcMain.handle('app:platform', () => process.platform);
-  
-  // --- Auth ---
-  ipcMain.handle('auth:login', (_, pin) => {
-    const user = database.getUserByPin(pin);
-    if (!user) return { error: 'Invalid PIN' };
-    database.addAuditLog({ action: 'LOGIN', module: 'auth', user: user.username, description: `Login: ${user.name}` });
-    return { user: { id: user.id, username: user.username, name: user.name, role: user.role } };
-  });
-  
-  ipcMain.handle('auth:getUsers', () => database.getUsers());
-  ipcMain.handle('auth:createUser', (_, user) => database.addUser(user));
-  ipcMain.handle('auth:updateUser', (_, id, data) => database.updateUser(id, data));
-  ipcMain.handle('auth:deleteUser', (_, id) => database.deleteUser(id));
-  
-  // --- Daily Entries ---
-  ipcMain.handle('daily:get', (_, date) => {
-    const entries = database.getDailyEntries(date);
-    const meta = database.getDailyMetadata(date);
-    const invoices = database.getInvoices(date);
-    return { entries, metadata: meta, invoices };
-  });
-  
-  ipcMain.handle('daily:save', (_, date, entries, metadata) => {
-    database.saveDailyEntries(date, entries, metadata);
-    database.addAuditLog({ action: 'UPDATE', module: 'dailyEntry', user: metadata?.updatedBy || 'admin', description: `Daily entries saved for ${date}`, metadata: { date, count: entries.length } });
-    // Push summary to Firebase
-    if (syncService) syncService.pushDailySummary(date, entries, metadata);
-    return { success: true };
-  });
-  
-  ipcMain.handle('daily:getMeta', (_, date) => database.getDailyMetadata(date));
-  
-  ipcMain.handle('daily:openingStock', (_, date) => {
-    // Look backwards for previous day's closing stock
-    const entries = database.getDailyEntries(date);
-    if (entries.length > 0) {
-      const stock = {};
-      entries.forEach(e => { stock[e.product_id] = e.clst; });
-      return stock;
-    }
-    // Look back up to 31 days
-    const currentDate = new Date(date);
-    for (let i = 1; i <= 31; i++) {
-      const prev = new Date(currentDate);
-      prev.setDate(prev.getDate() - i);
-      const prevStr = prev.toISOString().split('T')[0];
-      const prevEntries = database.getDailyEntries(prevStr);
-      if (prevEntries.length > 0) {
-        const stock = {};
-        prevEntries.forEach(e => { stock[e.product_id] = e.clst; });
-        return stock;
-      }
-    }
-    return {};
-  });
-  
-  ipcMain.handle('daily:saveOpeningStock', (_, date, stock) => {
-    // Opening stock is stored as part of daily entries
-    database.addAuditLog({ action: 'UPDATE', module: 'dailyEntry', user: 'admin', description: `Opening stock saved for ${date}`, metadata: { date } });
-    return { success: true };
-  });
-  
-  // --- Denominations ---
-  ipcMain.handle('denomination:get', (_, date) => database.getDenomination(date));
-  ipcMain.handle('denomination:save', (_, date, data) => {
-    database.saveDenomination(date, data);
-    database.addAuditLog({ action: 'UPDATE', module: 'denomination', user: 'admin', description: `Denomination saved for ${date}: ₹${data.totalCash}`, metadata: { date } });
-    return { success: true };
-  });
-  
-  // --- Products ---
-  ipcMain.handle('products:getAll', () => database.getProducts());
-  ipcMain.handle('products:add', (_, product) => {
-    const id = database.addProduct(product);
-    database.addAuditLog({ action: 'CREATE', module: 'products', user: 'admin', description: `Product added: ${product.particular}`, newValue: product });
-    return { id };
-  });
-  ipcMain.handle('products:updateRate', (_, id, rate) => {
-    database.updateProductRate(id, rate);
-    return { success: true };
-  });
-  ipcMain.handle('products:updateStatus', (_, id, status) => {
-    database.updateProductStatus(id, status);
-    return { success: true };
-  });
-  
-  // --- Categories ---
-  ipcMain.handle('categories:getAll', () => database.getCategories());
-  ipcMain.handle('categories:upsert', (_, key, label, bpc) => {
-    database.upsertCategory(key, label, bpc);
-    return { success: true };
-  });
-  
-  // --- Staff ---
-  ipcMain.handle('staff:getAll', () => database.getStaff());
-  ipcMain.handle('staff:add', (_, name, type) => {
-    database.addStaff(name, type);
-    database.addAuditLog({ action: 'CREATE', module: 'staff', user: 'admin', description: `Staff added: ${name} (${type})` });
-    return { success: true };
-  });
-  ipcMain.handle('staff:update', (_, id, name) => { database.updateStaff(id, name); return { success: true }; });
-  ipcMain.handle('staff:delete', (_, id) => { database.deleteStaff(id); return { success: true }; });
-  
-  // --- Invoices ---
-  ipcMain.handle('invoices:get', (_, date) => database.getInvoices(date));
-  ipcMain.handle('invoices:save', (_, date, invoices) => {
-    database.saveInvoices(date, invoices);
-    database.addAuditLog({ action: 'UPDATE', module: 'dailyEntry', user: 'admin', description: `Invoices saved for ${date} (${invoices.length} invoices)`, metadata: { date } });
-    return { success: true };
-  });
-  
-  // --- Audit Logs ---
-  ipcMain.handle('audit:getLogs', (_, filters) => database.getAuditLogs(filters || {}));
-  
-  // --- Analytics ---
-  ipcMain.handle('analytics:dailyRange', (_, start, end) => database.getDailyRange(start, end));
-  ipcMain.handle('analytics:topProducts', (_, start, end, limit) => database.getTopProducts(start, end, limit || 10));
-  ipcMain.handle('analytics:topDays', (_, limit, year, month) => database.getTopDays(limit || 5, year, month));
-  ipcMain.handle('analytics:categoryBreakdown', (_, start, end) => database.getCategoryBreakdown(start, end));
-  
-  // --- Backup ---
-  ipcMain.handle('backup:create', (_, label) => {
-    const result = database.createBackup(label || 'manual');
-    if (mainWindow) mainWindow.webContents.send('backup:complete', result);
-    return result;
-  });
-  ipcMain.handle('backup:list', () => database.listBackups());
-  ipcMain.handle('backup:restore', (_, filename) => {
-    database.restoreBackup(filename);
-    return { success: true };
-  });
-  ipcMain.handle('backup:status', () => autoBackup.getStatus());
-  
-  // --- Firebase Sync ---
-  ipcMain.handle('sync:status', () => syncService.getStatus());
-  ipcMain.handle('sync:force', () => syncService.forceSync());
-  ipcMain.handle('sync:setEnabled', (_, enabled) => {
-    syncService.setEnabled(enabled);
-    return { success: true };
-  });
-  
-  // --- Settings ---
-  ipcMain.handle('settings:get', (_, key) => database.getSetting(key));
-  ipcMain.handle('settings:set', (_, key, value) => { database.setSetting(key, value); return { success: true }; });
-  ipcMain.handle('settings:getAll', () => database.getAllSettings());
-  
-  // --- Window ---
+  ipcMain.handle('app:paths', () => ({
+    userData: USER_DATA,
+    documents: DOCUMENTS,
+    backups: BACKUP_DIR,
+    database: path.join(__dirname, '..', 'backend', 'data', 'tasmac.db')
+  }));
+
+  // --- Window Controls ---
   ipcMain.handle('window:minimize', () => mainWindow?.minimize());
   ipcMain.handle('window:maximize', () => {
     if (mainWindow?.isMaximized()) mainWindow.unmaximize();
     else mainWindow?.maximize();
   });
-  ipcMain.handle('window:close', () => mainWindow?.close());
+  ipcMain.handle('window:close', () => mainWindow?.hide());
+  ipcMain.handle('window:isMaximized', () => mainWindow?.isMaximized() || false);
+
+  // --- Backup (direct from main process for faster access) ---
+  ipcMain.handle('backup:create', (_, label) => {
+    try {
+      const fileStore = require(path.join(__dirname, '..', 'backend', 'src', 'services', 'fileStore'));
+      return fileStore.createBackup(label || 'manual');
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  ipcMain.handle('backup:list', () => {
+    try {
+      const fileStore = require(path.join(__dirname, '..', 'backend', 'src', 'services', 'fileStore'));
+      return fileStore.listBackups();
+    } catch (err) {
+      return [];
+    }
+  });
+
+  ipcMain.handle('backup:restore', async (_, filename) => {
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: 'warning',
+      buttons: ['Cancel', 'Restore'],
+      defaultId: 0,
+      title: 'Confirm Restore',
+      message: `Restore from backup "${filename}"?`,
+      detail: 'This will overwrite all current data. A safety backup will be created first.'
+    });
+    
+    if (result.response === 1) {
+      try {
+        const fileStore = require(path.join(__dirname, '..', 'backend', 'src', 'services', 'fileStore'));
+        fileStore.restoreBackup(filename);
+        // Restart the app to reload all data
+        app.relaunch();
+        app.exit(0);
+        return { success: true };
+      } catch (err) {
+        return { error: err.message };
+      }
+    }
+    return { cancelled: true };
+  });
+
+  ipcMain.handle('backup:openFolder', () => {
+    const fileStore = require(path.join(__dirname, '..', 'backend', 'src', 'services', 'fileStore'));
+    shell.openPath(fileStore.BACKUP_DIR);
+  });
+
+  ipcMain.handle('backup:status', () => ({
+    enabled: true,
+    intervalMinutes: 30,
+    maxBackups: 20,
+    backupDir: BACKUP_DIR,
+    nextBackup: autoBackupTimer ? 'Scheduled' : 'Disabled'
+  }));
+
+  // --- Sync Status ---
+  ipcMain.handle('sync:status', () => {
+    try {
+      const syncService = require(path.join(__dirname, 'src', 'firebase', 'syncService.js'));
+      return syncService.getStatus ? syncService.getStatus() : { running: false, firebaseAvailable: false };
+    } catch {
+      return { running: false, firebaseAvailable: false, enabled: false };
+    }
+  });
+
+  ipcMain.handle('sync:force', async () => {
+    try {
+      const syncService = require(path.join(__dirname, 'src', 'firebase', 'syncService.js'));
+      if (syncService.forceSync) return await syncService.forceSync();
+      return { error: 'Sync not available' };
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  ipcMain.handle('sync:setEnabled', (_, enabled) => {
+    try {
+      const syncService = require(path.join(__dirname, 'src', 'firebase', 'syncService.js'));
+      if (syncService.setEnabled) syncService.setEnabled(enabled);
+      return { success: true };
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  // --- Settings ---
+  ipcMain.handle('settings:getAll', () => {
+    try {
+      const fileStore = require(path.join(__dirname, '..', 'backend', 'src', 'services', 'fileStore'));
+      return fileStore.get('settings') || {};
+    } catch { return {}; }
+  });
+
+  ipcMain.handle('settings:get', (_, key) => {
+    try {
+      const settings = require(path.join(__dirname, '..', 'backend', 'src', 'services', 'fileStore')).get('settings') || {};
+      return settings[key] || null;
+    } catch { return null; }
+  });
+
+  ipcMain.handle('settings:set', (_, key, value) => {
+    try {
+      const fileStore = require(path.join(__dirname, '..', 'backend', 'src', 'services', 'fileStore'));
+      const settings = fileStore.get('settings') || {};
+      settings[key] = value;
+      fileStore.set('settings', settings);
+      return { success: true };
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  // --- Export ---
+  ipcMain.handle('export:excel', async (_, data) => {
+    const { filePath } = await dialog.showSaveDialog(mainWindow, {
+      defaultPath: data.filename || 'TASMAC_1745_export.xlsx',
+      filters: [{ name: 'Excel', extensions: ['xlsx'] }]
+    });
+    if (filePath) {
+      // Trigger download via the Express API
+      return { filePath, proceed: true };
+    }
+    return { cancelled: true };
+  });
+
+  // --- Dialog helpers ---
+  ipcMain.handle('dialog:confirm', async (_, options) => {
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: options.type || 'question',
+      buttons: options.buttons || ['Cancel', 'OK'],
+      defaultId: options.defaultId || 0,
+      title: options.title || 'Confirm',
+      message: options.message || '',
+      detail: options.detail || ''
+    });
+    return result.response;
+  });
+}
+
+// ===== APPLICATION MENU =====
+function setupMenu() {
+  const template = [
+    {
+      label: 'TASMAC POS',
+      submenu: [
+        { label: 'About', role: 'about' },
+        { type: 'separator' },
+        {
+          label: 'Create Backup',
+          accelerator: 'CmdOrCtrl+B',
+          click: () => {
+            const fileStore = require(path.join(__dirname, '..', 'backend', 'src', 'services', 'fileStore'));
+            const result = fileStore.createBackup('menu');
+            if (mainWindow) mainWindow.webContents.send('notification', { type: 'success', message: `Backup created: ${result.filename}` });
+          }
+        },
+        {
+          label: 'Open Backup Folder',
+          click: () => {
+            const fileStore = require(path.join(__dirname, '..', 'backend', 'src', 'services', 'fileStore'));
+            shell.openPath(fileStore.BACKUP_DIR);
+          }
+        },
+        { type: 'separator' },
+        {
+          label: 'Restart',
+          accelerator: 'CmdOrCtrl+Shift+R',
+          click: () => { app.relaunch(); app.exit(0); }
+        },
+        {
+          label: 'Quit',
+          accelerator: 'CmdOrCtrl+Q',
+          click: () => { isQuitting = true; app.quit(); }
+        }
+      ]
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' }, { role: 'redo' }, { type: 'separator' },
+        { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }
+      ]
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { type: 'separator' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { role: 'resetZoom' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' }
+      ]
+    }
+  ];
+
+  if (isDev) {
+    template[2].submenu.push({ type: 'separator' }, { role: 'toggleDevTools' });
+  }
+
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
+}
+
+// ===== ICON HELPER =====
+function getIconPath() {
+  const iconName = process.platform === 'win32' ? 'icon.ico' : 'icon.png';
+  const iconPath = path.join(__dirname, iconName);
+  if (fs.existsSync(iconPath)) return iconPath;
+  return undefined;
 }
 
 // ===== APP LIFECYCLE =====
-
 app.on('window-all-closed', () => {
-  cleanup();
-  if (process.platform !== 'darwin') app.quit();
+  // On macOS, keep app running in background
+  if (process.platform !== 'darwin') {
+    isQuitting = true;
+    app.quit();
+  }
 });
 
 app.on('activate', () => {
-  if (mainWindow === null) createWindow();
+  // On macOS, re-create window when dock icon clicked
+  if (mainWindow === null) {
+    createMainWindow();
+  } else {
+    mainWindow.show();
+  }
 });
 
 app.on('before-quit', () => {
+  isQuitting = true;
   cleanup();
 });
 
 function cleanup() {
-  if (backendProcess) {
-    backendProcess.kill();
-    backendProcess = null;
+  console.log('[App] Shutting down...');
+  
+  // Stop auto-backup timer
+  if (autoBackupTimer) {
+    clearInterval(autoBackupTimer);
+    autoBackupTimer = null;
   }
-  if (autoBackup) autoBackup.stop();
-  if (syncService) syncService.stop();
-  if (database) database.close();
+  
+  // Stop sync timer
+  if (syncTimer) {
+    clearInterval(syncTimer);
+    syncTimer = null;
+  }
+  
+  // Close Express server
+  if (expressServer) {
+    expressServer.close(() => {
+      console.log('[Backend] Express server closed');
+    });
+    expressServer = null;
+  }
+  
+  console.log('[App] Cleanup complete');
 }
+
+// ===== CRASH RECOVERY =====
+process.on('uncaughtException', (err) => {
+  console.error('[CRASH] Uncaught Exception:', err);
+  // Create emergency backup before crashing
+  try {
+    const fileStore = require(path.join(__dirname, '..', 'backend', 'src', 'services', 'fileStore'));
+    fileStore.createBackup('crash-recovery');
+    console.log('[CRASH] Emergency backup created');
+  } catch (backupErr) {
+    console.error('[CRASH] Failed to create emergency backup:', backupErr.message);
+  }
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[CRASH] Unhandled Rejection at:', promise, 'reason:', reason);
+});
