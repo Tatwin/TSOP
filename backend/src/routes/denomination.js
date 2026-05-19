@@ -7,8 +7,8 @@ const denominations = {};
 
 const DENOMINATION_NOTES = [500, 200, 100, 50, 20, 10];
 
-// GET /api/denomination/:date - Get denomination for a date
-router.get('/:date', authMiddleware, (req, res) => {
+// GET /api/denomination/:date - Get denomination for a date (NO AUTH - view is free)
+router.get('/:date', (req, res) => {
   const { date } = req.params;
   const data = denominations[date];
 
