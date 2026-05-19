@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CATEGORIES, DEFAULT_PRODUCTS } from '../data/products';
 import { useAuth } from '../context/AuthContext';
@@ -14,9 +14,28 @@ export default function InvoicePage() {
   const [selectedDate, setSelectedDate] = useState(formatDate(new Date()));
   const [invoices, setInvoices] = useState([]);
   const [showAddInvoice, setShowAddInvoice] = useState(false);
+  const [loadingInvoices, setLoadingInvoices] = useState(false);
+
+  // Load saved invoices from backend on mount and date change
+  useEffect(() => {
+    const loadInvoices = async () => {
+      setLoadingInvoices(true);
+      try {
+        const res = await api.get(`/daily-entry/${selectedDate}`);
+        if (res.data.invoices && res.data.invoices.length > 0) {
+          setInvoices(res.data.invoices);
+        }
+      } catch (err) {
+        console.error('Failed to load invoices:', err);
+      } finally {
+        setLoadingInvoices(false);
+      }
+    };
+    loadInvoices();
+  }, [selectedDate]);
 
   // New invoice form
-  const [newInvoice, setNewInvoice] = useState({ invoiceNo: '', invoiceDate: formatDate(new Date()), invoiceAmount: 0 });
+  const [newInvoice, setNewInvoice] = useState({ invoiceNo: 'S040', invoiceDate: formatDate(new Date()), invoiceAmount: 0 });
 
   // Purchase dialog state
   const [activeInvoiceIdx, setActiveInvoiceIdx] = useState(null);
@@ -279,7 +298,7 @@ export default function InvoicePage() {
             <div className="grid-3 gap-16">
               <div>
                 <label className="form-label">Invoice No</label>
-                <input type="text" value={newInvoice.invoiceNo} onChange={e => setNewInvoice({...newInvoice, invoiceNo: e.target.value})} placeholder="e.g. INV-001" />
+                <input type="text" value={newInvoice.invoiceNo} onChange={e => setNewInvoice({...newInvoice, invoiceNo: e.target.value})} placeholder="S040" />
               </div>
               <div>
                 <label className="form-label">Invoice Date</label>
