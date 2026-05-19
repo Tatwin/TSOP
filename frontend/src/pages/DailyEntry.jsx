@@ -138,6 +138,7 @@ export default function DailyEntry() {
         api.get(`/denomination/${selectedDate}`)
       ]);
       const os = osRes.data.openingStock || {};
+      const purchases = osRes.data.purchases || {};
       const savedEntries = entryRes.data.entries;
 
       if (savedEntries?.length > 0) {
@@ -147,7 +148,7 @@ export default function DailyEntry() {
           productId: p.id, sno: p.sno, codeNo: p.codeNo,
           particular: p.particular, category: p.category,
           cases: 0, bottles: 0, openingStock: os[p.id] || 0,
-          purchase: 0, stockReturn: 0, rate: p.rate
+          purchase: purchases[p.id] || 0, stockReturn: 0, rate: p.rate
         })));
       }
       if (entryRes.data.posAmount != null) setPosAmount(entryRes.data.posAmount);
