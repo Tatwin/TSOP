@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { CATEGORIES, DEFAULT_PRODUCTS, CATEGORY_ORDER } from '../data/products';
 import api from '../utils/api';
+import { getEffectiveDate } from '../utils/dateHelper';
 
 function formatINR(num) { return new Intl.NumberFormat('en-IN').format(num || 0); }
 
@@ -16,7 +17,7 @@ export default function Dashboard() {
 
 
   // Stock view state
-  const [stockDate, setStockDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [stockDate, setStockDate] = useState(() => getEffectiveDate());
   const [stockData, setStockData] = useState(null);
   const [stockLoading, setStockLoading] = useState(false);
   const [stockSearch, setStockSearch] = useState('');
@@ -24,7 +25,7 @@ export default function Dashboard() {
   const loadToday = async () => {
     setLoading(true);
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const today = getEffectiveDate();
       const [entryRes, denomRes] = await Promise.all([
         api.get(`/daily-entry/${today}`),
         api.get(`/denomination/${today}`)

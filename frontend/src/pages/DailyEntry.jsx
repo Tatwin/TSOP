@@ -3,18 +3,18 @@ import { useNavigate } from 'react-router-dom';
 import { CATEGORIES, DEFAULT_PRODUCTS, CATEGORY_ORDER } from '../data/products';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
+import { getEffectiveDate, formatDate } from '../utils/dateHelper';
 import CaseAbstract from '../components/CaseAbstract';
 import DenominationCounter from '../components/DenominationCounter';
 
-function formatDate(d) { return d.toISOString().split('T')[0]; }
 function formatINR(num) { return new Intl.NumberFormat('en-IN').format(num); }
 
 export default function DailyEntry() {
   const { authenticated } = useAuth();
   const navigate = useNavigate();
 
-  // Core state
-  const [selectedDate, setSelectedDate] = useState(formatDate(new Date()));
+  // Core state - uses effective date (yesterday if midnight-4AM)
+  const [selectedDate, setSelectedDate] = useState(getEffectiveDate());
   const [entries, setEntries] = useState(() => initEntries());
   const [denomination, setDenomination] = useState({ notes: { 500:0,200:0,100:0,50:0,20:0,10:0 }, coins: 0 });
   const [posAmount, setPosAmount] = useState(0);

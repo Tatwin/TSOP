@@ -3,3 +3,8 @@ dist/
 .env
 *.log
 .DS_Store
+
+# Runtime data (regenerated on first save)
+# Keep backend/data/ directory but ignore runtime store
+!backend/data/
+backend/data/store.json

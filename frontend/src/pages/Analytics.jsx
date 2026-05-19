@@ -1,99 +1,173 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { CATEGORIES, DEFAULT_PRODUCTS, CATEGORY_ORDER } from '../data/products';
+import api from '../utils/api';
 
 function formatINR(num) {
-  return new Intl.NumberFormat('en-IN').format(num);
+  return new Intl.NumberFormat('en-IN').format(num || 0);
 }
 
-// Generate sample data for demonstration (since no real API data available)
-function generateSampleData() {
-  const days = [];
-  const today = new Date();
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
-    const dateStr = d.toISOString().split('T')[0];
-    const baseAmount = 80000 + Math.floor(Math.random() * 60000);
-    days.push({
-      date: dateStr,
-      displayDate: `${d.getDate()}/${d.getMonth() + 1}`,
-      totalSales: baseAmount,
-      imfsSales: Math.floor(baseAmount * 0.72),
-      beerSales: Math.floor(baseAmount * 0.28),
-      totalBottles: Math.floor(baseAmount / 250),
-    });
-  }
-  return days;
-}
-
-function generateCategoryBreakdown() {
-  const breakdown = {};
-  const colors = [
-    '#1a237e', '#283593', '#303f9f', '#3949ab', '#3f51b5',
-    '#5c6bc0', '#7986cb', '#9fa8da', '#c5cae9', '#e8eaf6',
-    '#ff6f00', '#ff8f00', '#ffa000', '#ffb300', '#ffc107'
-  ];
-  let totalSales = 0;
-  CATEGORY_ORDER.forEach((cat, idx) => {
-    const count = DEFAULT_PRODUCTS.filter(p => p.category === cat).length;
-    const avgRate = DEFAULT_PRODUCTS.filter(p => p.category === cat)
-      .reduce((sum, p) => sum + (p.rate || 0), 0) / (count || 1);
-    const sales = Math.floor(count * avgRate * (Math.random() * 5 + 2));
-    breakdown[cat] = { label: CATEGORIES[cat].label, sales, color: colors[idx % colors.length], count };
-    totalSales += sales;
-  });
-  // Add percentages
-  Object.keys(breakdown).forEach(k => {
-    breakdown[k].percentage = totalSales > 0 ? ((breakdown[k].sales / totalSales) * 100).toFixed(1) : 0;
-  });
-  return { breakdown, totalSales };
-}
-
-function getTopSoldItems() {
-  const items = DEFAULT_PRODUCTS
-    .filter(p => p.rate > 0)
-    .map(p => ({
-      ...p,
-      estimatedSales: Math.floor(Math.random() * 20 + 1),
-      salesValue: Math.floor(Math.random() * 20 + 1) * p.rate
-    }))
-    .sort((a, b) => b.salesValue - a.salesValue)
-    .slice(0, 10);
-  return items;
-}
-
-function getNotSoldItems() {
-  return DEFAULT_PRODUCTS
-    .filter(p => p.rate === 0 || Math.random() > 0.85)
-    .slice(0, 20)
-    .map(p => ({ ...p, lastSoldDays: Math.floor(Math.random() * 120 + 90) }));
-}
-
-function getMonthlySummary() {
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// Helper: get effective today (yesterday if midnight-4AM)
+function getEffectiveToday() {
   const now = new Date();
-  const data = [];
-  for (let i = 5; i >= 0; i--) {
-    const m = (now.getMonth() - i + 12) % 12;
-    data.push({
-      month: months[m],
-      sales: Math.floor(Math.random() * 1000000 + 2000000),
-      days: Math.floor(Math.random() * 5 + 26)
-    });
+  if (now.getHours() >= 0 && now.getHours() < 4) {
+    now.setDate(now.getDate() - 1);
   }
-  return data;
+  return now.toISOString().split('T')[0];
 }
 
 export default function Analytics() {
   const [activeTab, setActiveTab] = useState('daily');
+  const [loading, setLoading] = useState(false);
+  const [dailyData, setDailyData] = useState([]);
+  const [categoryBreakdown, setCategoryBreakdown] = useState({});
+  const [topItems, setTopItems] = useState([]);
+  const [lowStockItems, setLowStockItems] = useState([]);
+  const [monthlySummary, setMonthlySummary] = useState([]);
+  const [dataLoaded, setDataLoaded] = useState(false);
 
-  const dailyData = useMemo(() => generateSampleData(), []);
-  const { breakdown, totalSales } = useMemo(() => generateCategoryBreakdown(), []);
-  const topItems = useMemo(() => getTopSoldItems(), []);
-  const notSoldItems = useMemo(() => getNotSoldItems(), []);
-  const monthlySummary = useMemo(() => getMonthlySummary(), []);
+  // Load last 30 days of data on mount
+  useEffect(() => {
+    loadAnalyticsData();
+  }, []);
 
-  const maxDailySales = Math.max(...dailyData.map(d => d.totalSales));
+  const loadAnalyticsData = async () => {
+    setLoading(true);
+    try {
+      const today = getEffectiveToday();
+      const endDate = today;
+      const start = new Date(today);
+      start.setDate(start.getDate() - 29);
+      const startDate = start.toISOString().split('T')[0];
+
+      // Fetch 30 days of data
+      const res = await api.get(`/daily-entry/range/${startDate}/${endDate}`);
+      const rangeData = res.data.data || {};
+
+      // Build daily sales array
+      const days = [];
+      const catSales = {};
+      const productSalesMap = {};
+      const current = new Date(startDate);
+      const endD = new Date(endDate);
+
+      while (current <= endD) {
+        const dateStr = current.toISOString().split('T')[0];
+        const dayData = rangeData[dateStr];
+        let totalSales = 0, imfsSales = 0, beerSales = 0, totalBottles = 0;
+
+        if (dayData?.entries?.length > 0) {
+          dayData.entries.forEach(e => {
+            const salesAmt = e.salesAmt || 0;
+            const sales = e.sales || 0;
+            totalSales += salesAmt;
+            totalBottles += sales > 0 ? sales : 0;
+
+            // Category breakdown accumulation
+            if (e.category) {
+              catSales[e.category] = (catSales[e.category] || 0) + salesAmt;
+            }
+
+            // Per-product accumulation
+            if (e.productId && salesAmt > 0) {
+              if (!productSalesMap[e.productId]) {
+                productSalesMap[e.productId] = { bottles: 0, value: 0, particular: e.particular, category: e.category, rate: e.rate };
+              }
+              productSalesMap[e.productId].bottles += (sales > 0 ? sales : 0);
+              productSalesMap[e.productId].value += salesAmt;
+            }
+
+            // IMFS vs Beer split
+            if (e.category && e.category.startsWith('BEER')) {
+              beerSales += salesAmt;
+            } else {
+              imfsSales += salesAmt;
+            }
+          });
+        }
+
+        const d = new Date(dateStr);
+        days.push({
+          date: dateStr,
+          displayDate: `${d.getDate()}/${d.getMonth() + 1}`,
+          totalSales,
+          imfsSales,
+          beerSales,
+          totalBottles
+        });
+
+        current.setDate(current.getDate() + 1);
+      }
+
+      setDailyData(days);
+
+      // Category breakdown
+      const totalAllSales = Object.values(catSales).reduce((s, v) => s + v, 0);
+      const breakdown = {};
+      const colors = [
+        '#0E6633', '#1B8A4A', '#2EAD62', '#3FC97A', '#50E593',
+        '#D92426', '#E84C4E', '#F07072', '#F59496', '#FAB8BA',
+        '#1E291E', '#3D523D', '#5C7B5C', '#7BA47B', '#9ACD9A'
+      ];
+      CATEGORY_ORDER.forEach((cat, idx) => {
+        const sales = catSales[cat] || 0;
+        breakdown[cat] = {
+          label: CATEGORIES[cat].label,
+          sales,
+          color: colors[idx % colors.length],
+          count: DEFAULT_PRODUCTS.filter(p => p.category === cat).length,
+          percentage: totalAllSales > 0 ? ((sales / totalAllSales) * 100).toFixed(1) : '0.0'
+        };
+      });
+      setCategoryBreakdown(breakdown);
+
+      // Top sold items
+      const topSorted = Object.entries(productSalesMap)
+        .map(([id, data]) => ({ productId: id, ...data }))
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 10);
+      setTopItems(topSorted);
+
+      // Low stock / not sold - products with 0 sales in 30 days
+      const soldProductIds = new Set(Object.keys(productSalesMap));
+      const notSold = DEFAULT_PRODUCTS
+        .filter(p => !soldProductIds.has(p.id))
+        .map(p => ({ ...p, daysSinceLastSale: 30 }));
+      setLowStockItems(notSold);
+
+      // Monthly summary (last 6 months)
+      const monthData = [];
+      const now = new Date(today);
+      for (let i = 5; i >= 0; i--) {
+        const mDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const yr = mDate.getFullYear();
+        const mo = mDate.getMonth() + 1;
+        const moStart = `${yr}-${String(mo).padStart(2, '0')}-01`;
+        const daysInMonth = new Date(yr, mo, 0).getDate();
+        const moEnd = `${yr}-${String(mo).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+        // For the current 30-day range, calculate from that data
+        let moSales = 0, moDays = 0;
+        Object.entries(rangeData).forEach(([date, dd]) => {
+          if (date >= moStart && date <= moEnd && dd?.entries?.length > 0) {
+            dd.entries.forEach(e => { moSales += e.salesAmt || 0; });
+            moDays++;
+          }
+        });
+
+        monthData.push({ month: months[mo - 1], year: yr, sales: moSales, days: moDays });
+      }
+      setMonthlySummary(monthData);
+      setDataLoaded(true);
+    } catch (err) {
+      console.error('Analytics load error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const maxDailySales = Math.max(...dailyData.map(d => d.totalSales), 1);
+  const totalAllCatSales = Object.values(categoryBreakdown).reduce((s, v) => s + (v.sales || 0), 0);
 
   const tabs = [
     { id: 'daily', label: 'Daily Sales' },
@@ -104,11 +178,32 @@ export default function Analytics() {
     { id: 'profitable', label: 'Profitable' }
   ];
 
+  if (loading && !dataLoaded) {
+    return (
+      <div className="card">
+        <div className="card-body text-center" style={{ padding: 60 }}>
+          <p style={{ fontSize: '1rem', color: 'var(--text-muted)' }}>Loading analytics data...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="card">
-        <h2 style={{ fontSize: '1.2rem', color: '#1a237e', marginBottom: '4px' }}>Analytics Dashboard</h2>
-        <p style={{ fontSize: '0.85rem', color: '#757575' }}>Sales insights and performance metrics</p>
+        <div className="card-header">
+          <div>
+            <h2 style={{ fontSize: '1.2rem', color: 'var(--primary)', marginBottom: '4px' }}>Analytics Dashboard</h2>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              {dataLoaded && dailyData.filter(d => d.totalSales > 0).length > 0
+                ? `Based on ${dailyData.filter(d => d.totalSales > 0).length} days of real sales data`
+                : 'No sales data found. Save daily entries to see analytics.'}
+            </p>
+          </div>
+          <button className="btn-primary btn-sm" onClick={loadAnalyticsData} disabled={loading}>
+            {loading ? 'Loading...' : 'Refresh'}
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -120,9 +215,9 @@ export default function Analytics() {
               onClick={() => setActiveTab(tab.id)}
               style={{
                 padding: '8px 16px', borderRadius: '20px',
-                border: activeTab === tab.id ? '2px solid #1a237e' : '1px solid #e0e0e0',
-                background: activeTab === tab.id ? '#1a237e' : 'white',
-                color: activeTab === tab.id ? 'white' : '#333',
+                border: activeTab === tab.id ? '2px solid var(--primary)' : '1px solid var(--border)',
+                background: activeTab === tab.id ? 'var(--primary)' : 'white',
+                color: activeTab === tab.id ? 'white' : 'var(--text-dark)',
                 fontSize: '0.85rem', cursor: 'pointer', fontWeight: '600'
               }}
             >
@@ -136,175 +231,181 @@ export default function Analytics() {
       {activeTab === 'daily' && (
         <div className="card">
           <h3 style={{ marginBottom: '16px', fontSize: '1rem' }}>Total Sales Per Day (Last 30 Days)</h3>
-          <div style={{ overflowX: 'auto' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '3px', height: '200px', minWidth: '600px', padding: '0 8px' }}>
-              {dailyData.map((day, idx) => {
-                const height = maxDailySales > 0 ? (day.totalSales / maxDailySales) * 180 : 0;
-                return (
-                  <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
-                    <div
-                      style={{
-                        width: '100%',
-                        maxWidth: '20px',
-                        height: `${height}px`,
-                        background: `linear-gradient(180deg, #1a237e, #534bae)`,
-                        borderRadius: '3px 3px 0 0',
-                        position: 'relative',
-                        cursor: 'pointer',
-                        transition: 'opacity 0.2s'
-                      }}
-                      title={`${day.date}: ₹${formatINR(day.totalSales)}`}
-                    />
-                    <div style={{ fontSize: '0.6rem', color: '#757575', marginTop: '4px', transform: 'rotate(-45deg)', whiteSpace: 'nowrap' }}>
-                      {day.displayDate}
-                    </div>
+          {dailyData.filter(d => d.totalSales > 0).length === 0 ? (
+            <p className="text-muted text-center" style={{ padding: 40 }}>No daily sales data available yet. Save entries in Daily Entry to see chart.</p>
+          ) : (
+            <>
+              <div style={{ overflowX: 'auto' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: '3px', height: '200px', minWidth: '600px', padding: '0 8px' }}>
+                  {dailyData.map((day, idx) => {
+                    const height = maxDailySales > 0 ? (day.totalSales / maxDailySales) * 180 : 0;
+                    return (
+                      <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
+                        <div
+                          style={{
+                            width: '100%', maxWidth: '20px', height: `${height}px`,
+                            background: day.totalSales > 0 ? 'linear-gradient(180deg, #0E6633, #1B8A4A)' : '#e0e0e0',
+                            borderRadius: '3px 3px 0 0', cursor: 'pointer'
+                          }}
+                          title={`${day.date}: \u20B9${formatINR(day.totalSales)}`}
+                        />
+                        <div style={{ fontSize: '0.6rem', color: '#757575', marginTop: '4px', transform: 'rotate(-45deg)', whiteSpace: 'nowrap' }}>
+                          {day.displayDate}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div style={{ marginTop: '20px', display: 'flex', flexWrap: 'wrap', gap: '16px' }}>
+                <div style={{ padding: '12px', background: '#E8F5E9', borderRadius: '8px', flex: '1 1 150px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Average Daily</div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: '700', color: 'var(--primary)' }}>
+                    {'\u20B9'}{formatINR(Math.floor(dailyData.reduce((s, d) => s + d.totalSales, 0) / Math.max(dailyData.filter(d => d.totalSales > 0).length, 1)))}
                   </div>
-                );
-              })}
-            </div>
-          </div>
-          <div style={{ marginTop: '20px', display: 'flex', flexWrap: 'wrap', gap: '16px' }}>
-            <div style={{ padding: '12px', background: '#e3f2fd', borderRadius: '8px', flex: '1 1 150px', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.8rem', color: '#757575' }}>Average Daily</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: '700', color: '#1a237e' }}>
-                ₹{formatINR(Math.floor(dailyData.reduce((s, d) => s + d.totalSales, 0) / 30))}
+                </div>
+                <div style={{ padding: '12px', background: '#E8F5E9', borderRadius: '8px', flex: '1 1 150px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Highest Day</div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: '700', color: 'var(--success)' }}>
+                    {'\u20B9'}{formatINR(maxDailySales)}
+                  </div>
+                </div>
+                <div style={{ padding: '12px', background: '#FFF3E0', borderRadius: '8px', flex: '1 1 150px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>30-Day Total</div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: '700', color: '#e65100' }}>
+                    {'\u20B9'}{formatINR(dailyData.reduce((s, d) => s + d.totalSales, 0))}
+                  </div>
+                </div>
+                <div style={{ padding: '12px', background: '#E3F2FD', borderRadius: '8px', flex: '1 1 150px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Active Days</div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: '700', color: '#1565C0' }}>
+                    {dailyData.filter(d => d.totalSales > 0).length} / 30
+                  </div>
+                </div>
               </div>
-            </div>
-            <div style={{ padding: '12px', background: '#e8f5e9', borderRadius: '8px', flex: '1 1 150px', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.8rem', color: '#757575' }}>Highest Day</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: '700', color: '#2e7d32' }}>
-                ₹{formatINR(maxDailySales)}
-              </div>
-            </div>
-            <div style={{ padding: '12px', background: '#fff3e0', borderRadius: '8px', flex: '1 1 150px', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.8rem', color: '#757575' }}>30 Day Total</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: '700', color: '#e65100' }}>
-                ₹{formatINR(dailyData.reduce((s, d) => s + d.totalSales, 0))}
-              </div>
-            </div>
-          </div>
+            </>
+          )}
         </div>
       )}
 
       {/* Category Breakdown */}
       {activeTab === 'category' && (
         <div className="card">
-          <h3 style={{ marginBottom: '16px', fontSize: '1rem' }}>Category Breakdown (Estimated)</h3>
-          {/* CSS Pie chart representation using stacked bars */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px' }}>
-            <div style={{ flex: '1 1 300px' }}>
-              {/* Horizontal bar chart for categories */}
-              {CATEGORY_ORDER.map(cat => {
-                const data = breakdown[cat];
-                if (!data || data.sales === 0) return null;
-                const barWidth = totalSales > 0 ? (data.sales / totalSales) * 100 : 0;
-                return (
-                  <div key={cat} style={{ marginBottom: '8px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '2px' }}>
-                      <span style={{ fontWeight: '600' }}>{data.label}</span>
-                      <span style={{ color: '#757575' }}>{data.percentage}% (₹{formatINR(data.sales)})</span>
+          <h3 style={{ marginBottom: '16px', fontSize: '1rem' }}>Category Breakdown</h3>
+          {totalAllCatSales === 0 ? (
+            <p className="text-muted text-center" style={{ padding: 40 }}>No category data. Save daily entries first.</p>
+          ) : (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px' }}>
+              <div style={{ flex: '1 1 300px' }}>
+                {CATEGORY_ORDER.map(cat => {
+                  const data = categoryBreakdown[cat];
+                  if (!data || data.sales === 0) return null;
+                  const barWidth = totalAllCatSales > 0 ? (data.sales / totalAllCatSales) * 100 : 0;
+                  return (
+                    <div key={cat} style={{ marginBottom: '8px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '2px' }}>
+                        <span style={{ fontWeight: '600' }}>{data.label}</span>
+                        <span style={{ color: 'var(--text-muted)' }}>{data.percentage}% ({'\u20B9'}{formatINR(data.sales)})</span>
+                      </div>
+                      <div style={{ height: '20px', background: '#F4F6F4', borderRadius: '4px', overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${barWidth}%`, background: data.color, borderRadius: '4px', transition: 'width 0.5s' }} />
+                      </div>
                     </div>
-                    <div style={{ height: '20px', background: '#f5f5f5', borderRadius: '4px', overflow: 'hidden' }}>
-                      <div style={{
-                        height: '100%',
-                        width: `${barWidth}%`,
-                        background: data.color,
-                        borderRadius: '4px',
-                        transition: 'width 0.5s'
-                      }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div style={{ flex: '0 1 200px' }}>
-              {/* Circular representation using CSS */}
-              <div style={{
-                width: '180px', height: '180px', borderRadius: '50%',
-                background: `conic-gradient(${CATEGORY_ORDER.map((cat, i) => {
-                  const pct = Number(breakdown[cat]?.percentage || 0);
-                  const start = CATEGORY_ORDER.slice(0, i).reduce((s, c) => s + Number(breakdown[c]?.percentage || 0), 0);
-                  return `${breakdown[cat]?.color || '#ccc'} ${start}% ${start + pct}%`;
-                }).join(', ')})`,
-                margin: '0 auto'
-              }} />
-              <div style={{ textAlign: 'center', marginTop: '12px', fontSize: '0.9rem', fontWeight: '700', color: '#1a237e' }}>
-                Total: ₹{formatINR(totalSales)}
+                  );
+                })}
+              </div>
+              <div style={{ flex: '0 1 200px', textAlign: 'center' }}>
+                <div style={{
+                  width: '180px', height: '180px', borderRadius: '50%', margin: '0 auto',
+                  background: `conic-gradient(${CATEGORY_ORDER.map((cat, i) => {
+                    const pct = Number(categoryBreakdown[cat]?.percentage || 0);
+                    const startPct = CATEGORY_ORDER.slice(0, i).reduce((s, c) => s + Number(categoryBreakdown[c]?.percentage || 0), 0);
+                    return `${categoryBreakdown[cat]?.color || '#ccc'} ${startPct}% ${startPct + pct}%`;
+                  }).join(', ')})`
+                }} />
+                <div style={{ marginTop: '12px', fontSize: '0.9rem', fontWeight: '700', color: 'var(--primary)' }}>
+                  Total: {'\u20B9'}{formatINR(totalAllCatSales)}
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       )}
 
       {/* Top Sold Items */}
       {activeTab === 'top' && (
         <div className="card">
-          <h3 style={{ marginBottom: '16px', fontSize: '1rem' }}>Top 10 Most Sold Items (by Value)</h3>
-          <div className="table-wrapper">
-            <table>
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Product</th>
-                  <th>Category</th>
-                  <th>Rate</th>
-                  <th>Est. Bottles Sold</th>
-                  <th>Sales Value</th>
-                </tr>
-              </thead>
-              <tbody>
-                {topItems.map((item, idx) => (
-                  <tr key={item.id}>
-                    <td style={{ fontWeight: '700' }}>{idx + 1}</td>
-                    <td style={{ fontWeight: '600' }}>{item.particular}</td>
-                    <td style={{ fontSize: '0.8rem' }}>{CATEGORIES[item.category]?.label}</td>
-                    <td>₹{item.rate}</td>
-                    <td style={{ textAlign: 'center' }}>{item.estimatedSales}</td>
-                    <td style={{ fontWeight: '700', color: '#1a237e' }}>₹{formatINR(item.salesValue)}</td>
+          <h3 style={{ marginBottom: '16px', fontSize: '1rem' }}>Top 10 Best Sellers (by Value - Last 30 Days)</h3>
+          {topItems.length === 0 ? (
+            <p className="text-muted text-center" style={{ padding: 40 }}>No sales data available yet.</p>
+          ) : (
+            <div className="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Product</th>
+                    <th>Category</th>
+                    <th>Rate</th>
+                    <th>Bottles Sold</th>
+                    <th>Sales Value</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {topItems.map((item, idx) => (
+                    <tr key={item.productId}>
+                      <td style={{ fontWeight: '700' }}>{idx + 1}</td>
+                      <td style={{ fontWeight: '600' }}>{item.particular}</td>
+                      <td style={{ fontSize: '0.8rem' }}>{CATEGORIES[item.category]?.label}</td>
+                      <td>{'\u20B9'}{item.rate}</td>
+                      <td style={{ textAlign: 'center', fontWeight: 600 }}>{item.bottles}</td>
+                      <td style={{ fontWeight: '700', color: 'var(--primary)' }}>{'\u20B9'}{formatINR(item.value)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
       {/* Not Sold Items */}
       {activeTab === 'notsold' && (
         <div className="card">
-          <h3 style={{ marginBottom: '16px', fontSize: '1rem' }}>Items Not Sold for 90+ Days</h3>
-          <p style={{ fontSize: '0.85rem', color: '#757575', marginBottom: '12px' }}>
-            These items may need attention - consider removing or repricing
-          </p>
-          <div className="table-wrapper" style={{ maxHeight: '400px', overflow: 'auto' }}>
-            <table>
-              <thead>
-                <tr>
-                  <th>Code</th>
-                  <th>Product</th>
-                  <th>Category</th>
-                  <th>Rate</th>
-                  <th>Days Since Last Sale</th>
-                </tr>
-              </thead>
-              <tbody>
-                {notSoldItems.map((item) => (
-                  <tr key={item.id} style={{ background: item.lastSoldDays > 120 ? '#ffebee' : 'transparent' }}>
-                    <td>{item.codeNo || '-'}</td>
-                    <td style={{ fontWeight: '600' }}>{item.particular}</td>
-                    <td style={{ fontSize: '0.8rem' }}>{CATEGORIES[item.category]?.label}</td>
-                    <td>₹{item.rate || 0}</td>
-                    <td style={{
-                      fontWeight: '700',
-                      color: item.lastSoldDays > 120 ? '#c62828' : '#e65100'
-                    }}>
-                      {item.lastSoldDays} days
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <h3 style={{ marginBottom: '16px', fontSize: '1rem' }}>Items Not Sold (Last 30 Days)</h3>
+          {lowStockItems.length === 0 ? (
+            <p className="text-muted text-center" style={{ padding: 40 }}>All products have been sold in the last 30 days!</p>
+          ) : (
+            <>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                {lowStockItems.length} products had no sales in the last 30 days
+              </p>
+              <div className="table-wrapper" style={{ maxHeight: '400px', overflow: 'auto' }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Code</th>
+                      <th>Product</th>
+                      <th>Category</th>
+                      <th>Rate</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lowStockItems.map((item) => (
+                      <tr key={item.id} style={{ background: '#FEE2E2' }}>
+                        <td>{item.codeNo || '-'}</td>
+                        <td style={{ fontWeight: '600' }}>{item.particular}</td>
+                        <td style={{ fontSize: '0.8rem' }}>{CATEGORIES[item.category]?.label}</td>
+                        <td>{'\u20B9'}{item.rate || 0}</td>
+                        <td style={{ fontWeight: '700', color: 'var(--danger)' }}>No sales (30d)</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -312,52 +413,57 @@ export default function Analytics() {
       {activeTab === 'monthly' && (
         <div className="card">
           <h3 style={{ marginBottom: '16px', fontSize: '1rem' }}>Monthly Sales Summary</h3>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '12px', height: '200px', padding: '0 20px' }}>
-            {monthlySummary.map((m, idx) => {
-              const maxSales = Math.max(...monthlySummary.map(s => s.sales));
-              const height = maxSales > 0 ? (m.sales / maxSales) * 170 : 0;
-              return (
-                <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
-                  <div style={{ fontSize: '0.7rem', fontWeight: '600', color: '#1a237e', marginBottom: '4px' }}>
-                    ₹{(m.sales / 100000).toFixed(1)}L
-                  </div>
-                  <div
-                    style={{
-                      width: '40px',
-                      height: `${height}px`,
-                      background: `linear-gradient(180deg, #ff6f00, #ff8f00)`,
-                      borderRadius: '6px 6px 0 0'
-                    }}
-                    title={`${m.month}: ₹${formatINR(m.sales)} (${m.days} days)`}
-                  />
-                  <div style={{ fontSize: '0.8rem', fontWeight: '600', marginTop: '8px' }}>{m.month}</div>
-                  <div style={{ fontSize: '0.65rem', color: '#757575' }}>{m.days} days</div>
-                </div>
-              );
-            })}
-          </div>
-          <div style={{ marginTop: '20px' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-              <thead>
-                <tr style={{ background: '#e3f2fd' }}>
-                  <th style={{ padding: '8px', textAlign: 'left' }}>Month</th>
-                  <th style={{ padding: '8px', textAlign: 'right' }}>Total Sales</th>
-                  <th style={{ padding: '8px', textAlign: 'right' }}>Days</th>
-                  <th style={{ padding: '8px', textAlign: 'right' }}>Avg/Day</th>
-                </tr>
-              </thead>
-              <tbody>
-                {monthlySummary.map((m, idx) => (
-                  <tr key={idx} style={{ borderBottom: '1px solid #e0e0e0' }}>
-                    <td style={{ padding: '8px', fontWeight: '600' }}>{m.month}</td>
-                    <td style={{ padding: '8px', textAlign: 'right', fontWeight: '700', color: '#1a237e' }}>₹{formatINR(m.sales)}</td>
-                    <td style={{ padding: '8px', textAlign: 'right' }}>{m.days}</td>
-                    <td style={{ padding: '8px', textAlign: 'right' }}>₹{formatINR(Math.floor(m.sales / m.days))}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {monthlySummary.every(m => m.sales === 0) ? (
+            <p className="text-muted text-center" style={{ padding: 40 }}>No monthly data available. Save daily entries to see trends.</p>
+          ) : (
+            <>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '12px', height: '200px', padding: '0 20px' }}>
+                {monthlySummary.map((m, idx) => {
+                  const maxSales = Math.max(...monthlySummary.map(s => s.sales), 1);
+                  const height = maxSales > 0 ? (m.sales / maxSales) * 170 : 0;
+                  return (
+                    <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
+                      <div style={{ fontSize: '0.7rem', fontWeight: '600', color: 'var(--primary)', marginBottom: '4px' }}>
+                        {m.sales > 0 ? `\u20B9${(m.sales / 100000).toFixed(1)}L` : '-'}
+                      </div>
+                      <div
+                        style={{
+                          width: '40px', height: `${Math.max(height, 4)}px`,
+                          background: m.sales > 0 ? 'linear-gradient(180deg, #0E6633, #2EAD62)' : '#e0e0e0',
+                          borderRadius: '6px 6px 0 0'
+                        }}
+                        title={`${m.month} ${m.year}: \u20B9${formatINR(m.sales)} (${m.days} days)`}
+                      />
+                      <div style={{ fontSize: '0.8rem', fontWeight: '600', marginTop: '8px' }}>{m.month}</div>
+                      <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{m.days}d</div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ marginTop: '20px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                  <thead>
+                    <tr style={{ background: '#E8F5E9' }}>
+                      <th style={{ padding: '8px', textAlign: 'left' }}>Month</th>
+                      <th style={{ padding: '8px', textAlign: 'right' }}>Total Sales</th>
+                      <th style={{ padding: '8px', textAlign: 'right' }}>Days</th>
+                      <th style={{ padding: '8px', textAlign: 'right' }}>Avg/Day</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {monthlySummary.filter(m => m.sales > 0).map((m, idx) => (
+                      <tr key={idx} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td style={{ padding: '8px', fontWeight: '600' }}>{m.month} {m.year}</td>
+                        <td style={{ padding: '8px', textAlign: 'right', fontWeight: '700', color: 'var(--primary)' }}>{'\u20B9'}{formatINR(m.sales)}</td>
+                        <td style={{ padding: '8px', textAlign: 'right' }}>{m.days}</td>
+                        <td style={{ padding: '8px', textAlign: 'right' }}>{m.days > 0 ? `\u20B9${formatINR(Math.floor(m.sales / m.days))}` : '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -365,7 +471,7 @@ export default function Analytics() {
       {activeTab === 'profitable' && (
         <div className="card">
           <h3 style={{ marginBottom: '16px', fontSize: '1rem' }}>Most Profitable Items (by Rate)</h3>
-          <p style={{ fontSize: '0.85rem', color: '#757575', marginBottom: '12px' }}>
+          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
             Highest-priced items that contribute most to revenue per bottle sold
           </p>
           <div className="table-wrapper">
@@ -375,7 +481,7 @@ export default function Analytics() {
                   <th>#</th>
                   <th>Product</th>
                   <th>Category</th>
-                  <th>Rate (₹)</th>
+                  <th>Rate</th>
                   <th>Revenue Potential</th>
                 </tr>
               </thead>
@@ -389,13 +495,13 @@ export default function Analytics() {
                       <td style={{ fontWeight: '700' }}>{idx + 1}</td>
                       <td style={{ fontWeight: '600' }}>{item.particular}</td>
                       <td style={{ fontSize: '0.8rem' }}>{CATEGORIES[item.category]?.label}</td>
-                      <td style={{ fontWeight: '700', color: '#1a237e' }}>₹{formatINR(item.rate)}</td>
+                      <td style={{ fontWeight: '700', color: 'var(--primary)' }}>{'\u20B9'}{formatINR(item.rate)}</td>
                       <td>
-                        <div style={{ height: '16px', background: '#f5f5f5', borderRadius: '4px', overflow: 'hidden' }}>
+                        <div style={{ height: '16px', background: '#F4F6F4', borderRadius: '4px', overflow: 'hidden' }}>
                           <div style={{
                             height: '100%',
                             width: `${Math.min((item.rate / 3000) * 100, 100)}%`,
-                            background: 'linear-gradient(90deg, #2e7d32, #66bb6a)',
+                            background: 'linear-gradient(90deg, #0E6633, #2EAD62)',
                             borderRadius: '4px'
                           }} />
                         </div>
@@ -407,24 +513,25 @@ export default function Analytics() {
             </table>
           </div>
 
-          {/* Most Purchased - grouped by category */}
-          <h3 style={{ marginTop: '24px', marginBottom: '16px', fontSize: '1rem' }}>Most Purchased Categories</h3>
+          <h3 style={{ marginTop: '24px', marginBottom: '16px', fontSize: '1rem' }}>Category Summary</h3>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
             {CATEGORY_ORDER.map(cat => {
               const count = DEFAULT_PRODUCTS.filter(p => p.category === cat).length;
               const avgRate = Math.floor(
                 DEFAULT_PRODUCTS.filter(p => p.category === cat).reduce((s, p) => s + (p.rate || 0), 0) / (count || 1)
               );
+              const catData = categoryBreakdown[cat];
               return (
                 <div key={cat} style={{
-                  padding: '12px', background: '#f5f5f5', borderRadius: '8px',
-                  border: '1px solid #e0e0e0'
+                  padding: '12px', background: '#F4F6F4', borderRadius: '8px',
+                  border: '1px solid var(--border)'
                 }}>
-                  <div style={{ fontSize: '0.8rem', fontWeight: '700', color: '#1a237e', marginBottom: '4px' }}>
+                  <div style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--primary)', marginBottom: '4px' }}>
                     {CATEGORIES[cat].label}
                   </div>
-                  <div style={{ fontSize: '0.75rem', color: '#757575' }}>
-                    {count} products | Avg ₹{avgRate}
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    {count} products | Avg {'\u20B9'}{avgRate}
+                    {catData && catData.sales > 0 ? ` | Sales: \u20B9${formatINR(catData.sales)}` : ''}
                   </div>
                 </div>
               );

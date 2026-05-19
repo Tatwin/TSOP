@@ -1,16 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const { authMiddleware } = require('../middleware/auth');
-
-// In-memory denomination storage
-const denominations = {};
+const fileStore = require('../config/fileStore');
 
 const DENOMINATION_NOTES = [500, 200, 100, 50, 20, 10];
 
 // GET /api/denomination/:date - Get denomination for a date (NO AUTH - view is free)
 router.get('/:date', (req, res) => {
   const { date } = req.params;
-  const data = denominations[date];
+  const data = fileStore.getDenomination(date);
 
   res.json({
     date,
@@ -25,7 +23,7 @@ router.get('/:date', (req, res) => {
   });
 });
 
-// POST /api/denomination/:date - Save denomination for a date
+// POST /api/denomination/:date - Save denomination for a date (AUTH REQUIRED)
 router.post('/:date', authMiddleware, (req, res) => {
   const { date } = req.params;
   const { notes, coins } = req.body;
@@ -37,7 +35,7 @@ router.post('/:date', authMiddleware, (req, res) => {
     totalCash += count * note;
   });
 
-  denominations[date] = {
+  const denomData = {
     notes: DENOMINATION_NOTES.reduce((acc, note) => {
       const count = notes?.[note]?.count || 0;
       acc[note] = { count, value: count * note };
@@ -48,7 +46,8 @@ router.post('/:date', authMiddleware, (req, res) => {
     updatedAt: new Date().toISOString()
   };
 
-  res.json({ success: true, denomination: denominations[date] });
+  fileStore.setDenomination(date, denomData);
+  res.json({ success: true, denomination: denomData });
 });
 
 module.exports = router;
