@@ -1,0 +1,17 @@
+{
+  "name": "tasmac-pos-backend",
+  "version": "1.0.0",
+  "description": "TASMAC POS Backend API",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "node src/index.js",
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "xlsx": "^0.18.5"
+  }
+}
