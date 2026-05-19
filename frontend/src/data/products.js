@@ -776,6 +776,18 @@ export const DEFAULT_PRODUCTS = [
   p('3287','SPECIAL TRIPLE STRONG','BEER_500ML_CAN'),
 ];
 
+// Apply rates
+import { PRODUCT_RATES } from './rates.js';
+const catIdx = {};
+DEFAULT_PRODUCTS.forEach(prod => {
+  if (!catIdx[prod.category]) catIdx[prod.category] = 0;
+  const rates = PRODUCT_RATES[prod.category];
+  if (rates && catIdx[prod.category] < rates.length) {
+    prod.rate = rates[catIdx[prod.category]] || 0;
+  }
+  catIdx[prod.category]++;
+});
+
 export const CATEGORY_ORDER = [
   '180ML_BRANDY', '180ML_WHISKEY', '180ML_RUM', '180ML_WINE', '180ML_VODKA_GIN',
   '375ML_BRANDY', '375ML_WHISKEY', '375ML_RUM', '375ML_VODKA_GIN', '375ML_WINE',
