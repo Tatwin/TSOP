@@ -1,130 +1,54 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CATEGORIES, DEFAULT_PRODUCTS, CATEGORY_ORDER } from '../data/products';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
-import DenominationCounter from '../components/DenominationCounter';
 import CaseAbstract from '../components/CaseAbstract';
-import InvoiceSection from '../components/InvoiceSection';
+import DenominationCounter from '../components/DenominationCounter';
 
-function formatDate(d) {
-  return d.toISOString().split('T')[0];
-}
-
-function formatINR(num) {
-  return new Intl.NumberFormat('en-IN').format(num);
-}
+function formatDate(d) { return d.toISOString().split('T')[0]; }
+function formatINR(num) { return new Intl.NumberFormat('en-IN').format(num); }
 
 export default function DailyEntry() {
   const { authenticated } = useAuth();
   const navigate = useNavigate();
+
+  // Core state
   const [selectedDate, setSelectedDate] = useState(formatDate(new Date()));
-  const [selectedCategory, setSelectedCategory] = useState('ALL');
   const [entries, setEntries] = useState(() => initEntries());
-  const [invoices, setInvoices] = useState([{ invoiceNo: '', invoiceDate: '', invoiceAmount: 0 }]);
-  const [denomination, setDenomination] = useState(initDenomination());
+  const [denomination, setDenomination] = useState({ notes: { 500:0,200:0,100:0,50:0,20:0,10:0 }, coins: 0 });
   const [posAmount, setPosAmount] = useState(0);
-  const [openingStock, setOpeningStock] = useState({});
+  const [deviceValues, setDeviceValues] = useState({ salesBottles:0, closingBottles:0, salesValue:0, closingValue:0 });
+
+  // UI state
+  const [mode, setMode] = useState('sequential'); // 'sequential' | 'table' | 'summary'
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [saving, setSaving] = useState(false);
-  const [exporting, setExporting] = useState(false);
   const [saveMsg, setSaveMsg] = useState('');
-  const [showDenomination, setShowDenomination] = useState(false);
   const [dataLoaded, setDataLoaded] = useState(false);
-  const [showActiveOnly, setShowActiveOnly] = useState(true);
-  const [showCaseAbstract, setShowCaseAbstract] = useState(false);
 
-
-  // Device vs Manual comparison state
-  const [deviceValues, setDeviceValues] = useState({
-    salesBottles: 0,
-    closingBottles: 0,
-    salesValue: 0,
-    closingValue: 0
-  });
+  // Refs for auto-focus
+  const caseInputRef = useRef(null);
+  const bottleInputRef = useRef(null);
 
   function initEntries() {
     return DEFAULT_PRODUCTS.map(p => ({
-      productId: p.id,
-      sno: p.sno,
-      codeNo: p.codeNo,
-      particular: p.particular,
-      category: p.category,
-      cases: 0,
-      bottles: 0,
-      openingStock: 0,
-      purchase: 0,
-      stockReturn: 0,
-      rate: p.rate
+      productId: p.id, sno: p.sno, codeNo: p.codeNo,
+      particular: p.particular, category: p.category,
+      cases: 0, bottles: 0, openingStock: 0,
+      purchase: 0, stockReturn: 0, rate: p.rate
     }));
   }
 
-  function initDenomination() {
-    return {
-      notes: { 500: 0, 200: 0, 100: 0, 50: 0, 20: 0, 10: 0 },
-      coins: 0
-    };
-  }
+  // Active products: has opening stock OR purchase > 0
+  const activeEntries = useMemo(() => {
+    return entries.filter(e => (e.openingStock || 0) > 0 || (e.purchase || 0) > 0);
+  }, [entries]);
 
+  // Current entry in sequential mode
+  const currentEntry = activeEntries[currentIndex] || null;
 
-  // Load data for selected date
-  const loadData = async () => {
-    try {
-      const [entryRes, osRes, denomRes] = await Promise.all([
-        api.get(`/daily-entry/${selectedDate}`),
-        api.get(`/daily-entry/${selectedDate}/opening-stock`),
-        api.get(`/denomination/${selectedDate}`)
-      ]);
-
-      const savedEntries = entryRes.data.entries;
-      const os = osRes.data.openingStock || {};
-      setOpeningStock(os);
-
-      if (savedEntries && savedEntries.length > 0) {
-        setEntries(savedEntries.map(e => ({ ...e, openingStock: os[e.productId] || e.openingStock || 0 })));
-      } else {
-        setEntries(DEFAULT_PRODUCTS.map(p => ({
-          productId: p.id, sno: p.sno, codeNo: p.codeNo,
-          particular: p.particular, category: p.category,
-          cases: 0, bottles: 0, openingStock: os[p.id] || 0,
-          purchase: 0, stockReturn: 0, rate: p.rate
-        })));
-      }
-
-      if (entryRes.data.invoices) setInvoices(entryRes.data.invoices);
-      else if (entryRes.data.metadata) {
-        setInvoices([{
-          invoiceNo: entryRes.data.metadata.invoiceNo || '',
-          invoiceDate: entryRes.data.metadata.invoiceDate || selectedDate,
-          invoiceAmount: entryRes.data.metadata.invoiceAmount || 0
-        }]);
-      }
-      if (entryRes.data.posAmount != null) setPosAmount(entryRes.data.posAmount);
-      if (entryRes.data.deviceValues) setDeviceValues(entryRes.data.deviceValues);
-
-      if (denomRes.data.denomination) {
-        const d = denomRes.data.denomination;
-        setDenomination({
-          notes: {
-            500: d.notes?.[500]?.count || 0, 200: d.notes?.[200]?.count || 0,
-            100: d.notes?.[100]?.count || 0, 50: d.notes?.[50]?.count || 0,
-            20: d.notes?.[20]?.count || 0, 10: d.notes?.[10]?.count || 0
-          },
-          coins: d.coins || 0
-        });
-      }
-
-      setDataLoaded(true);
-      setSaveMsg('Data loaded successfully');
-      setTimeout(() => setSaveMsg(''), 2000);
-    } catch (err) {
-      console.error('Load error:', err);
-      setSaveMsg('Failed to load data. Using defaults.');
-      setDataLoaded(true);
-    }
-  };
-
-
-  // Calculate values for an entry
+  // Calculate values for any entry
   const calcEntry = useCallback((entry) => {
     const caseSize = CATEGORIES[entry.category]?.bottlesPerCase || 48;
     const clst = (entry.cases || 0) * caseSize + (entry.bottles || 0);
@@ -141,21 +65,7 @@ export default function DailyEntry() {
     };
   }, []);
 
-  // Grand totals per category and overall
-  const categoryTotals = useMemo(() => {
-    const totals = {};
-    let grandTotal = 0;
-    CATEGORY_ORDER.forEach(catKey => {
-      const catEntries = entries.filter(e => e.category === catKey);
-      const catSalesAmt = catEntries.reduce((sum, e) => sum + calcEntry(e).salesAmt, 0);
-      totals[catKey] = catSalesAmt;
-      grandTotal += catSalesAmt;
-    });
-    totals.GRAND_TOTAL = grandTotal;
-    return totals;
-  }, [entries, calcEntry]);
-
-  // Overall totals
+  // Totals
   const totals = useMemo(() => {
     let totalSales = 0, totalPurchaseValue = 0, totalClValue = 0;
     let totalSalesBottles = 0, totalClosingBottles = 0;
@@ -164,578 +74,477 @@ export default function DailyEntry() {
       totalSales += calc.salesAmt;
       totalPurchaseValue += calc.purchaseValue;
       totalClValue += calc.clValue;
-      totalSalesBottles += calc.sales > 0 ? calc.sales : 0;
+      if (calc.sales > 0) totalSalesBottles += calc.sales;
       totalClosingBottles += calc.clst;
     });
     return { totalSales, totalPurchaseValue, totalClValue, totalSalesBottles, totalClosingBottles };
   }, [entries, calcEntry]);
 
-
-  // Denomination total
   const totalCash = useMemo(() => {
-    let total = denomination.coins || 0;
-    [500, 200, 100, 50, 20, 10].forEach(note => {
-      total += (denomination.notes[note] || 0) * note;
-    });
-    return total;
+    let t = denomination.coins || 0;
+    [500,200,100,50,20,10].forEach(n => { t += (denomination.notes[n] || 0) * n; });
+    return t;
   }, [denomination]);
 
   const cashPlusPOS = totalCash + posAmount;
   const cashMatch = Math.abs(cashPlusPOS - totals.totalSales) < 1;
+  const remittance = totals.totalSales - posAmount;
 
-  // Device vs Manual comparison
-  const manualValues = useMemo(() => ({
-    salesBottles: totals.totalSalesBottles,
-    closingBottles: totals.totalClosingBottles,
-    salesValue: totals.totalSales,
-    closingValue: totals.totalClValue
-  }), [totals]);
+  // Device comparison
+  const manualValues = { salesBottles: totals.totalSalesBottles, closingBottles: totals.totalClosingBottles, salesValue: totals.totalSales, closingValue: totals.totalClValue };
+  const deviceDiff = {
+    salesBottles: (deviceValues.salesBottles||0) - manualValues.salesBottles,
+    closingBottles: (deviceValues.closingBottles||0) - manualValues.closingBottles,
+    salesValue: (deviceValues.salesValue||0) - manualValues.salesValue,
+    closingValue: (deviceValues.closingValue||0) - manualValues.closingValue
+  };
+  const allDeviceMatched = Object.values(deviceDiff).every(d => Math.abs(d) < 1);
 
-  const deviceDifferences = useMemo(() => ({
-    salesBottles: (deviceValues.salesBottles || 0) - manualValues.salesBottles,
-    closingBottles: (deviceValues.closingBottles || 0) - manualValues.closingBottles,
-    salesValue: (deviceValues.salesValue || 0) - manualValues.salesValue,
-    closingValue: (deviceValues.closingValue || 0) - manualValues.closingValue
-  }), [deviceValues, manualValues]);
+  // Load data
+  const loadData = async () => {
+    try {
+      const [entryRes, osRes, denomRes] = await Promise.all([
+        api.get(`/daily-entry/${selectedDate}`),
+        api.get(`/daily-entry/${selectedDate}/opening-stock`),
+        api.get(`/denomination/${selectedDate}`)
+      ]);
+      const os = osRes.data.openingStock || {};
+      const savedEntries = entryRes.data.entries;
 
-  const allDeviceMatched = Object.values(deviceDifferences).every(d => Math.abs(d) < 1);
+      if (savedEntries?.length > 0) {
+        setEntries(savedEntries.map(e => ({ ...e, openingStock: os[e.productId] || e.openingStock || 0 })));
+      } else {
+        setEntries(DEFAULT_PRODUCTS.map(p => ({
+          productId: p.id, sno: p.sno, codeNo: p.codeNo,
+          particular: p.particular, category: p.category,
+          cases: 0, bottles: 0, openingStock: os[p.id] || 0,
+          purchase: 0, stockReturn: 0, rate: p.rate
+        })));
+      }
+      if (entryRes.data.posAmount != null) setPosAmount(entryRes.data.posAmount);
+      if (entryRes.data.deviceValues) setDeviceValues(entryRes.data.deviceValues);
+      if (denomRes.data.denomination) {
+        const d = denomRes.data.denomination;
+        setDenomination({
+          notes: { 500: d.notes?.[500]?.count||0, 200: d.notes?.[200]?.count||0, 100: d.notes?.[100]?.count||0, 50: d.notes?.[50]?.count||0, 20: d.notes?.[20]?.count||0, 10: d.notes?.[10]?.count||0 },
+          coins: d.coins || 0
+        });
+      }
+      setDataLoaded(true);
+      setCurrentIndex(0);
+      setSaveMsg('✓ Data loaded');
+      setTimeout(() => setSaveMsg(''), 2000);
+    } catch (err) {
+      setSaveMsg('Failed to load');
+      setDataLoaded(true);
+    }
+  };
 
-  // Check for negative sales entries
-  const negativeSalesEntries = useMemo(() => {
-    return entries.filter(e => calcEntry(e).sales < 0).map(e => e.productId);
-  }, [entries, calcEntry]);
+  // Save
+  const handleSave = async () => {
+    if (!authenticated) { navigate('/login'); return; }
+    setSaving(true);
+    try {
+      const enriched = entries.map(e => ({ ...e, ...calcEntry(e) }));
+      await api.post(`/daily-entry/${selectedDate}`, { entries: enriched, posAmount, deviceValues });
+      await api.post(`/denomination/${selectedDate}`, {
+        notes: Object.fromEntries(Object.entries(denomination.notes).map(([k,v]) => [k, {count:v}])),
+        coins: denomination.coins
+      });
+      setSaveMsg('✓ Saved successfully!');
+    } catch { setSaveMsg('Save failed'); }
+    finally { setSaving(false); setTimeout(() => setSaveMsg(''), 3000); }
+  };
 
-  // Update entry field
-  const updateEntry = (productId, field, value) => {
+  // Export
+  const handleExport = async () => {
+    try {
+      const enriched = entries.map(e => ({ ...e, ...calcEntry(e) }));
+      const res = await api.post('/export/daily', {
+        date: selectedDate, entries: enriched,
+        metadata: { invoiceAmount: totals.totalSales }, posAmount, deviceValues,
+        denomination: { notes: Object.fromEntries(Object.entries(denomination.notes).map(([k,v])=>[k,{count:v}])), coins: denomination.coins, totalCash }
+      }, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement('a'); a.href = url;
+      const d = new Date(selectedDate);
+      a.download = `TASMAC_1745_${['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][d.getMonth()]}-${String(d.getDate()).padStart(2,'0')}.xlsx`;
+      document.body.appendChild(a); a.click(); a.remove();
+    } catch { alert('Export failed'); }
+  };
+
+  // Sequential mode: update current entry
+  const updateCurrentEntry = (field, value) => {
+    if (!currentEntry) return;
     setEntries(prev => prev.map(e =>
-      e.productId === productId ? { ...e, [field]: Number(value) || 0 } : e
+      e.productId === currentEntry.productId ? { ...e, [field]: Number(value) || 0 } : e
     ));
   };
 
-  // Auto-hide: filter products with 0 opening AND 0 purchase
-  const filteredEntries = useMemo(() => {
-    let result = entries;
-    if (selectedCategory !== 'ALL') {
-      result = result.filter(e => e.category === selectedCategory);
-    }
-    if (showActiveOnly) {
-      result = result.filter(e => (e.openingStock || 0) > 0 || (e.purchase || 0) > 0);
-    }
-    return result;
-  }, [entries, selectedCategory, showActiveOnly]);
-
-  const activeCount = useMemo(() => {
-    return entries.filter(e => (e.openingStock || 0) > 0 || (e.purchase || 0) > 0).length;
-  }, [entries]);
-
-
-  // Save data - requires PIN auth
-  const handleSave = async () => {
-    if (!authenticated) {
-      setSaveMsg('PIN required to save. Please login first.');
-      setTimeout(() => { navigate('/login'); }, 1500);
-      return;
-    }
-    setSaving(true);
-    setSaveMsg('');
-    try {
-      const enrichedEntries = entries.map(e => {
-        const calc = calcEntry(e);
-        return { ...e, ...calc };
-      });
-
-      await api.post(`/daily-entry/${selectedDate}`, {
-        entries: enrichedEntries,
-        metadata: { invoiceAmount: totals.totalSales },
-        invoices,
-        posAmount,
-        deviceValues
-      });
-
-      const denomPayload = {
-        notes: Object.fromEntries(
-          Object.entries(denomination.notes).map(([k, v]) => [k, { count: v }])
-        ),
-        coins: denomination.coins
-      };
-      await api.post(`/denomination/${selectedDate}`, denomPayload);
-
-      setSaveMsg('Saved successfully!');
-    } catch (err) {
-      if (err.response?.status === 401) {
-        setSaveMsg('PIN expired. Please login again.');
-        setTimeout(() => navigate('/login'), 1500);
-      } else {
-        setSaveMsg('Save failed: ' + (err.response?.data?.error || err.message));
-      }
-    } finally {
-      setSaving(false);
-      setTimeout(() => setSaveMsg(''), 3000);
-    }
-  };
-
-  // Export to Excel
-  const handleExport = async () => {
-    setExporting(true);
-    try {
-      const enrichedEntries = entries.map(e => {
-        const calc = calcEntry(e);
-        return { ...e, ...calc };
-      });
-
-      const response = await api.post('/export/daily', {
-        date: selectedDate,
-        entries: enrichedEntries,
-        metadata: { invoiceAmount: totals.totalSales },
-        invoices,
-        posAmount,
-        deviceValues,
-        denomination: {
-          notes: Object.fromEntries(
-            Object.entries(denomination.notes).map(([k, v]) => [k, { count: v }])
-          ),
-          coins: denomination.coins,
-          totalCash
+  // Handle Enter key in sequential mode
+  const handleKeyDown = (e, field) => {
+    if (e.key === 'Enter') {
+      if (field === 'cases') {
+        bottleInputRef.current?.focus();
+      } else if (field === 'bottles') {
+        // Move to next product
+        if (currentIndex < activeEntries.length - 1) {
+          setCurrentIndex(currentIndex + 1);
+          setTimeout(() => caseInputRef.current?.focus(), 50);
         }
-      }, { responseType: 'blob' });
-
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const a = document.createElement('a');
-      a.href = url;
-      const dateObj = new Date(selectedDate);
-      const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-      const sheetName = `${months[dateObj.getMonth()]}-${String(dateObj.getDate()).padStart(2,'0')}`;
-      a.download = `TASMAC_1745_${sheetName}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
-      alert('Export failed: ' + (err.message || 'Unknown error'));
-    } finally {
-      setExporting(false);
+      }
     }
   };
 
+  // Focus case input when index changes
+  useEffect(() => {
+    if (mode === 'sequential') {
+      setTimeout(() => caseInputRef.current?.focus(), 100);
+    }
+  }, [currentIndex, mode]);
+
+  // Current entry calculations
+  const currentCalc = currentEntry ? calcEntry(currentEntry) : null;
 
   return (
     <div>
-      {/* Date Selection & Controls */}
-      <div className="card" style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center' }}>
-        <div style={{ flex: '1 1 200px' }}>
-          <label style={{ fontWeight: '600', fontSize: '0.9rem', display: 'block', marginBottom: '4px' }}>
-            Select Date
-          </label>
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            style={{ maxWidth: '200px' }}
-          />
-        </div>
-        <button onClick={loadData} className="btn-primary" style={{ height: '48px' }}>
-          Load Data
-        </button>
-        <button onClick={handleSave} className="btn-success" disabled={saving} style={{ height: '48px' }}>
-          {saving ? 'Saving...' : authenticated ? 'Save' : '🔒 Save (PIN needed)'}
-        </button>
-        <button onClick={handleExport} className="btn-warning" disabled={exporting} style={{ height: '48px' }}>
-          {exporting ? 'Exporting...' : 'Export Excel'}
-        </button>
-        <button
-          onClick={() => setShowDenomination(!showDenomination)}
-          className="btn-secondary"
-          style={{ height: '48px' }}
-        >
-          {showDenomination ? 'Hide Cash' : 'Cash Counter'}
-        </button>
-        <button
-          onClick={() => setShowCaseAbstract(!showCaseAbstract)}
-          className="btn-secondary"
-          style={{ height: '48px', background: showCaseAbstract ? '#e3f2fd' : '#e0e0e0' }}
-        >
-          {showCaseAbstract ? 'Hide Cases' : '📦 Cases'}
-        </button>
-        {!authenticated && (
-          <button onClick={() => navigate('/login')} className="btn-primary" style={{ height: '48px', background: '#ff6f00' }}>
-            🔑 Enter PIN
-          </button>
-        )}
-      </div>
+      {/* Top Controls */}
+      <div className="card">
+        <div className="card-body" style={{ padding: '16px 24px' }}>
+          <div className="flex-between flex-wrap gap-12">
+            <div className="flex gap-12" style={{ alignItems: 'center' }}>
+              <div>
+                <label className="form-label" style={{ marginBottom: 4 }}>Date</label>
+                <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}
+                  style={{ width: 160, padding: '8px 12px' }} />
+              </div>
+              <button className="btn-primary" onClick={loadData} style={{ marginTop: 18 }}>
+                Load Data
+              </button>
+            </div>
 
+            <div className="flex gap-8" style={{ alignItems: 'center' }}>
+              {/* Mode switcher */}
+              <div className="flex gap-4" style={{ background: '#f5f8fa', borderRadius: 8, padding: 3 }}>
+                {[{id:'sequential',label:'📝 Entry'},{id:'summary',label:'📊 Summary'},{id:'table',label:'📋 Table'}].map(m => (
+                  <button key={m.id} onClick={() => setMode(m.id)}
+                    style={{
+                      padding: '6px 14px', borderRadius: 6, fontSize: '0.8rem', fontWeight: 600, border: 'none',
+                      background: mode === m.id ? 'var(--primary)' : 'transparent',
+                      color: mode === m.id ? 'white' : 'var(--text-gray)', cursor: 'pointer'
+                    }}>
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+              <button className="btn-success" onClick={handleSave} disabled={saving}>
+                {saving ? '...' : authenticated ? '💾 Save' : '🔒 Save'}
+              </button>
+              <button className="btn-warning" onClick={handleExport}>📥 Excel</button>
+            </div>
+          </div>
 
-      {saveMsg && (
-        <div style={{
-          padding: '10px 16px', borderRadius: '8px', marginBottom: '12px',
-          background: saveMsg.includes('fail') || saveMsg.includes('Failed') || saveMsg.includes('required') || saveMsg.includes('expired') ? '#ffebee' : '#e8f5e9',
-          color: saveMsg.includes('fail') || saveMsg.includes('Failed') || saveMsg.includes('required') || saveMsg.includes('expired') ? '#c62828' : '#2e7d32',
-          fontWeight: '600'
-        }}>
-          {saveMsg}
-        </div>
-      )}
-
-      {/* Summary Bar */}
-      <div className="card" style={{ display: 'flex', flexWrap: 'wrap', gap: '16px' }}>
-        <div style={{ flex: '1 1 150px', textAlign: 'center' }}>
-          <div style={{ fontSize: '0.8rem', color: '#757575' }}>Grand Total Sales</div>
-          <div style={{ fontSize: '1.3rem', fontWeight: '700', color: '#1a237e' }}>
-            ₹{formatINR(totals.totalSales)}
-          </div>
-        </div>
-        <div style={{ flex: '1 1 150px', textAlign: 'center' }}>
-          <div style={{ fontSize: '0.8rem', color: '#757575' }}>POS (Card/GPay)</div>
-          <div style={{ fontSize: '1.3rem', fontWeight: '700', color: '#1565c0' }}>
-            ₹{formatINR(posAmount)}
-          </div>
-        </div>
-        <div style={{ flex: '1 1 150px', textAlign: 'center' }}>
-          <div style={{ fontSize: '0.8rem', color: '#757575' }}>Cash Collected</div>
-          <div style={{ fontSize: '1.3rem', fontWeight: '700', color: cashMatch ? '#2e7d32' : '#c62828' }}>
-            ₹{formatINR(totalCash)}
-          </div>
-        </div>
-        <div style={{ flex: '1 1 150px', textAlign: 'center' }}>
-          <div style={{ fontSize: '0.8rem', color: '#757575' }}>Remittance (Bank)</div>
-          <div style={{ fontSize: '1.3rem', fontWeight: '700', color: '#e65100' }}>
-            ₹{formatINR(totals.totalSales - posAmount)}
-          </div>
+          {saveMsg && (
+            <div style={{ marginTop: 12, padding: '8px 16px', borderRadius: 8,
+              background: saveMsg.includes('fail') || saveMsg.includes('Failed') ? '#fff5f8' : '#e8fff3',
+              color: saveMsg.includes('fail') || saveMsg.includes('Failed') ? 'var(--danger)' : 'var(--success)',
+              fontWeight: 600, fontSize: '0.85rem' }}>
+              {saveMsg}
+            </div>
+          )}
         </div>
       </div>
 
+      {/* Stats Row */}
+      <div className="grid-4 mb-20">
+        <div className="stat-card primary">
+          <div className="stat-label">Grand Total Sales</div>
+          <div className="stat-value">₹{formatINR(totals.totalSales)}</div>
+        </div>
+        <div className="stat-card success">
+          <div className="stat-label">Cash + POS</div>
+          <div className="stat-value">₹{formatINR(cashPlusPOS)}</div>
+        </div>
+        <div className="stat-card warning">
+          <div className="stat-label">Remittance (Bank)</div>
+          <div className="stat-value">₹{formatINR(remittance)}</div>
+        </div>
+        <div className="stat-card danger">
+          <div className="stat-label">Products Entered</div>
+          <div className="stat-value">{activeEntries.filter(e => e.cases > 0 || e.bottles > 0).length} / {activeEntries.length}</div>
+        </div>
+      </div>
 
-      {/* Validation Indicator: Cash + POS = Grand Total */}
-      {(totalCash > 0 || posAmount > 0) && (
-        <div className={cashMatch ? 'card status-match' : 'card status-mismatch'} 
-             style={{ textAlign: 'center', padding: '12px', fontSize: '1rem', fontWeight: '700' }}>
-          {cashMatch ? (
-            <span>✅ CASH + POS MATCHES GRAND TOTAL SALES</span>
+      {/* ===== SEQUENTIAL MODE ===== */}
+      {mode === 'sequential' && (
+        <div>
+          {activeEntries.length === 0 ? (
+            <div className="card">
+              <div className="card-body text-center" style={{ padding: 60 }}>
+                <div style={{ fontSize: '3rem', marginBottom: 16 }}>📦</div>
+                <h3 style={{ marginBottom: 8 }}>No Active Products</h3>
+                <p className="text-muted">Click "Load Data" to fetch opening stock, or go to "Purchase Invoice" to add purchases first.</p>
+              </div>
+            </div>
           ) : (
-            <span>⚠️ MISMATCH: Cash+POS ₹{formatINR(cashPlusPOS)} vs Sales ₹{formatINR(totals.totalSales)} (Diff: ₹{formatINR(Math.abs(cashPlusPOS - totals.totalSales))})</span>
+            <>
+              {/* Progress */}
+              <div className="card" style={{ marginBottom: 16 }}>
+                <div className="card-body" style={{ padding: '12px 24px' }}>
+                  <div className="flex-between mb-8">
+                    <span className="text-sm text-muted">
+                      Product {currentIndex + 1} of {activeEntries.length}
+                    </span>
+                    <span className="text-sm font-bold text-primary">
+                      {Math.round((currentIndex / activeEntries.length) * 100)}%
+                    </span>
+                  </div>
+                  <div className="progress-bar-container">
+                    <div className="progress-bar-fill" style={{ width: `${(currentIndex / activeEntries.length) * 100}%` }} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Entry Card */}
+              {currentEntry && (
+                <div className="entry-card">
+                  <div className="flex-between mb-8">
+                    <span className="badge badge-primary">{CATEGORIES[currentEntry.category]?.label}</span>
+                    <span className="text-xs text-muted">Code: {currentEntry.codeNo || '—'}</span>
+                  </div>
+
+                  <div className="product-name">{currentEntry.particular}</div>
+                  <div className="product-meta">
+                    <span>OP.ST: <strong>{currentEntry.openingStock}</strong></span>
+                    <span>Rate: <strong>₹{currentEntry.rate}</strong></span>
+                    <span>Purchase: <strong>{currentEntry.purchase}</strong></span>
+                  </div>
+
+                  {/* Input Fields */}
+                  <div className="entry-grid">
+                    <div className="entry-input-group">
+                      <label className="form-label">Closing CASE</label>
+                      <input
+                        ref={caseInputRef}
+                        type="number"
+                        min="0"
+                        className="input-lg"
+                        value={currentEntry.cases || ''}
+                        onChange={e => updateCurrentEntry('cases', e.target.value)}
+                        onKeyDown={e => handleKeyDown(e, 'cases')}
+                        placeholder="0"
+                        style={{ textAlign: 'center', fontSize: '1.5rem', fontWeight: 700 }}
+                      />
+                    </div>
+                    <div className="entry-input-group">
+                      <label className="form-label">Closing BOTTLE (loose)</label>
+                      <input
+                        ref={bottleInputRef}
+                        type="number"
+                        min="0"
+                        className="input-lg"
+                        value={currentEntry.bottles || ''}
+                        onChange={e => updateCurrentEntry('bottles', e.target.value)}
+                        onKeyDown={e => handleKeyDown(e, 'bottles')}
+                        placeholder="0"
+                        style={{ textAlign: 'center', fontSize: '1.5rem', fontWeight: 700 }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Live Calculations */}
+                  <div className="live-calc">
+                    <div className="live-calc-item">
+                      <div className="label">CL.ST</div>
+                      <div className="value">{currentCalc.clst}</div>
+                    </div>
+                    <div className="live-calc-item">
+                      <div className="label">Total</div>
+                      <div className="value">{currentCalc.total}</div>
+                    </div>
+                    <div className="live-calc-item">
+                      <div className="label">Sales</div>
+                      <div className={`value ${currentCalc.sales < 0 ? 'negative' : currentCalc.sales > 0 ? 'positive' : ''}`}>
+                        {currentCalc.sales}
+                      </div>
+                    </div>
+                    <div className="live-calc-item">
+                      <div className="label">Sales Amt</div>
+                      <div className={`value ${currentCalc.salesAmt < 0 ? 'negative' : currentCalc.salesAmt > 0 ? 'positive' : ''}`}>
+                        ₹{formatINR(currentCalc.salesAmt)}
+                      </div>
+                    </div>
+                    <div className="live-calc-item">
+                      <div className="label">CL Value</div>
+                      <div className="value">₹{formatINR(currentCalc.clValue)}</div>
+                    </div>
+                  </div>
+
+                  {/* Negative sales warning */}
+                  {currentCalc.sales < 0 && (
+                    <div style={{ marginTop: 16, padding: '10px 16px', background: '#fff5f8', borderRadius: 8, border: '1px solid var(--danger)' }}>
+                      <span style={{ color: 'var(--danger)', fontWeight: 700, fontSize: '0.85rem' }}>
+                        ⚠️ Negative sales! Check closing stock values.
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Navigation */}
+                  <div className="flex-between" style={{ marginTop: 24 }}>
+                    <button className="btn-secondary"
+                      disabled={currentIndex === 0}
+                      onClick={() => setCurrentIndex(Math.max(0, currentIndex - 1))}>
+                      ← Previous
+                    </button>
+                    <span className="text-muted text-sm">Press Enter to move next</span>
+                    <button className="btn-primary"
+                      disabled={currentIndex >= activeEntries.length - 1}
+                      onClick={() => setCurrentIndex(Math.min(activeEntries.length - 1, currentIndex + 1))}>
+                      Next →
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
 
-      {/* Negative Sales Warning */}
-      {negativeSalesEntries.length > 0 && (
-        <div className="card" style={{ background: '#ffebee', border: '2px solid #c62828', padding: '12px' }}>
-          <div style={{ fontWeight: '700', color: '#c62828', marginBottom: '8px', fontSize: '1rem' }}>
-            ⚠️ NEGATIVE SALES WARNING ({negativeSalesEntries.length} items)
-          </div>
-          <div style={{ fontSize: '0.85rem', color: '#c62828' }}>
-            {entries.filter(e => negativeSalesEntries.includes(e.productId)).map(e => (
-              <span key={e.productId} style={{ display: 'inline-block', margin: '2px 6px 2px 0', padding: '2px 8px', background: '#ffcdd2', borderRadius: '4px' }}>
-                {e.particular} ({calcEntry(e).sales})
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Case Abstract Section */}
-      {showCaseAbstract && (
-        <CaseAbstract entries={entries} calcEntry={calcEntry} />
-      )}
-
-      {/* Denomination Counter */}
-      {showDenomination && (
-        <DenominationCounter
-          denomination={denomination}
-          setDenomination={setDenomination}
-          totalCash={totalCash}
-          totalSales={totals.totalSales}
-          posAmount={posAmount}
-          setPosAmount={setPosAmount}
-        />
-      )}
-
-
-      {/* Device vs Manual Comparison */}
-      <div className="card">
-        <h3 style={{ marginBottom: '12px', fontSize: '1.1rem' }}>
-          📱 Device vs Manual Comparison
-        </h3>
-        <div style={{ marginBottom: '12px' }}>
-          <label style={{ fontWeight: '600', fontSize: '0.85rem', color: '#757575' }}>
-            Enter DEVICE values:
-          </label>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px', marginTop: '8px' }}>
-            <div>
-              <label style={{ fontSize: '0.75rem', fontWeight: '600' }}>Sales Bottles</label>
-              <input type="number" min="0" value={deviceValues.salesBottles || ''}
-                onChange={(e) => setDeviceValues(p => ({ ...p, salesBottles: Number(e.target.value) || 0 }))}
-                placeholder="0" style={{ padding: '10px', textAlign: 'center' }} />
-            </div>
-            <div>
-              <label style={{ fontSize: '0.75rem', fontWeight: '600' }}>Closing Bottles</label>
-              <input type="number" min="0" value={deviceValues.closingBottles || ''}
-                onChange={(e) => setDeviceValues(p => ({ ...p, closingBottles: Number(e.target.value) || 0 }))}
-                placeholder="0" style={{ padding: '10px', textAlign: 'center' }} />
-            </div>
-            <div>
-              <label style={{ fontSize: '0.75rem', fontWeight: '600' }}>Sales Value (₹)</label>
-              <input type="number" min="0" value={deviceValues.salesValue || ''}
-                onChange={(e) => setDeviceValues(p => ({ ...p, salesValue: Number(e.target.value) || 0 }))}
-                placeholder="0" style={{ padding: '10px', textAlign: 'center' }} />
-            </div>
-            <div>
-              <label style={{ fontSize: '0.75rem', fontWeight: '600' }}>Closing Value (₹)</label>
-              <input type="number" min="0" value={deviceValues.closingValue || ''}
-                onChange={(e) => setDeviceValues(p => ({ ...p, closingValue: Number(e.target.value) || 0 }))}
-                placeholder="0" style={{ padding: '10px', textAlign: 'center' }} />
-            </div>
-          </div>
-        </div>
-
-
-        {/* Comparison Table */}
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-            <thead>
-              <tr style={{ background: '#e3f2fd' }}>
-                <th style={{ padding: '8px', textAlign: 'left' }}>Source</th>
-                <th style={{ padding: '8px', textAlign: 'center' }}>Sales Bottles</th>
-                <th style={{ padding: '8px', textAlign: 'center' }}>Closing Bottles</th>
-                <th style={{ padding: '8px', textAlign: 'center' }}>Sales Value</th>
-                <th style={{ padding: '8px', textAlign: 'center' }}>Closing Value</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td style={{ padding: '8px', fontWeight: '600' }}>📱 DEVICE</td>
-                <td style={{ padding: '8px', textAlign: 'center' }}>{deviceValues.salesBottles || 0}</td>
-                <td style={{ padding: '8px', textAlign: 'center' }}>{deviceValues.closingBottles || 0}</td>
-                <td style={{ padding: '8px', textAlign: 'center' }}>₹{formatINR(deviceValues.salesValue || 0)}</td>
-                <td style={{ padding: '8px', textAlign: 'center' }}>₹{formatINR(deviceValues.closingValue || 0)}</td>
-              </tr>
-              <tr style={{ background: '#f5f5f5' }}>
-                <td style={{ padding: '8px', fontWeight: '600' }}>📝 MANUAL</td>
-                <td style={{ padding: '8px', textAlign: 'center' }}>{manualValues.salesBottles}</td>
-                <td style={{ padding: '8px', textAlign: 'center' }}>{manualValues.closingBottles}</td>
-                <td style={{ padding: '8px', textAlign: 'center' }}>₹{formatINR(manualValues.salesValue)}</td>
-                <td style={{ padding: '8px', textAlign: 'center' }}>₹{formatINR(manualValues.closingValue)}</td>
-              </tr>
-              <tr style={{ background: allDeviceMatched ? '#e8f5e9' : '#ffebee', fontWeight: '700' }}>
-                <td style={{ padding: '8px', color: allDeviceMatched ? '#2e7d32' : '#c62828' }}>DIFFERENCE</td>
-                <td style={{ padding: '8px', textAlign: 'center', color: Math.abs(deviceDifferences.salesBottles) < 1 ? '#2e7d32' : '#c62828' }}>{deviceDifferences.salesBottles}</td>
-                <td style={{ padding: '8px', textAlign: 'center', color: Math.abs(deviceDifferences.closingBottles) < 1 ? '#2e7d32' : '#c62828' }}>{deviceDifferences.closingBottles}</td>
-                <td style={{ padding: '8px', textAlign: 'center', color: Math.abs(deviceDifferences.salesValue) < 1 ? '#2e7d32' : '#c62828' }}>₹{formatINR(Math.abs(deviceDifferences.salesValue))}</td>
-                <td style={{ padding: '8px', textAlign: 'center', color: Math.abs(deviceDifferences.closingValue) < 1 ? '#2e7d32' : '#c62828' }}>₹{formatINR(Math.abs(deviceDifferences.closingValue))}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        {/* Match/Mismatch indicator */}
-        {(deviceValues.salesBottles > 0 || deviceValues.closingBottles > 0 || deviceValues.salesValue > 0 || deviceValues.closingValue > 0) && (
-          <div style={{
-            marginTop: '12px', padding: '10px', borderRadius: '8px', textAlign: 'center', fontWeight: '700',
-            background: allDeviceMatched ? '#e8f5e9' : '#ffebee',
-            color: allDeviceMatched ? '#2e7d32' : '#c62828',
-            border: `2px solid ${allDeviceMatched ? '#2e7d32' : '#c62828'}`
-          }}>
-            {allDeviceMatched ? '✅ All Matched' : '⚠️ WARNING: Device and Manual values DO NOT match!'}
-          </div>
-        )}
-      </div>
-
-
-      {/* Multiple Invoices Section */}
-      <InvoiceSection
-        invoices={invoices}
-        setInvoices={setInvoices}
-        selectedDate={selectedDate}
-        totalSales={totals.totalSales}
-      />
-
-      {/* Category Filter + Auto-hide toggle */}
-      <div className="card" style={{ padding: '12px' }}>
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '10px' }}>
-          <span style={{ fontWeight: '600', fontSize: '0.9rem' }}>Category:</span>
-          <button
-            onClick={() => setSelectedCategory('ALL')}
-            style={{
-              padding: '6px 14px', borderRadius: '20px',
-              border: selectedCategory === 'ALL' ? '2px solid #1a237e' : '1px solid #e0e0e0',
-              background: selectedCategory === 'ALL' ? '#1a237e' : 'white',
-              color: selectedCategory === 'ALL' ? 'white' : '#333',
-              fontSize: '0.8rem', cursor: 'pointer'
-            }}
-          >
-            All ({entries.length})
-          </button>
-          {CATEGORY_ORDER.map(catKey => {
-            const count = entries.filter(e => e.category === catKey).length;
-            const isActive = selectedCategory === catKey;
-            return (
-              <button key={catKey} onClick={() => setSelectedCategory(catKey)}
-                style={{
-                  padding: '6px 14px', borderRadius: '20px',
-                  border: isActive ? '2px solid #1a237e' : '1px solid #e0e0e0',
-                  background: isActive ? '#1a237e' : 'white',
-                  color: isActive ? 'white' : '#333',
-                  fontSize: '0.8rem', cursor: 'pointer'
-                }}>
-                {CATEGORIES[catKey].label} ({count})
-              </button>
-            );
-          })}
-        </div>
-        {/* Auto-hide toggle */}
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', borderTop: '1px solid #e0e0e0', paddingTop: '10px' }}>
-          <button
-            onClick={() => setShowActiveOnly(!showActiveOnly)}
-            style={{
-              padding: '8px 16px', borderRadius: '6px',
-              background: showActiveOnly ? '#e8f5e9' : '#fff3e0',
-              border: `2px solid ${showActiveOnly ? '#2e7d32' : '#e65100'}`,
-              color: showActiveOnly ? '#2e7d32' : '#e65100',
-              fontSize: '0.85rem', cursor: 'pointer', fontWeight: '600'
-            }}
-          >
-            {showActiveOnly ? '👁️ Show Active Only' : '📋 Show All Products'}
-          </button>
-          <span style={{ fontSize: '0.8rem', color: '#757575' }}>
-            Showing {filteredEntries.length} of {entries.length} products
-            {showActiveOnly && ` (${activeCount} active)`}
-          </span>
-        </div>
-      </div>
-
-
-      {/* Data Entry Table */}
-      <div className="card" style={{ padding: '8px' }}>
-        <div className="table-wrapper" style={{ maxHeight: '60vh', overflow: 'auto' }}>
-          <table>
-            <thead>
-              <tr>
-                <th>S.No</th>
-                <th>Code</th>
-                <th>Product</th>
-                <th style={{ background: '#ff6f00' }}>CASE</th>
-                <th style={{ background: '#ff6f00' }}>BOTTLE</th>
-                <th>OP.ST</th>
-                <th style={{ background: '#ff6f00' }}>PURCHASE</th>
-                <th style={{ background: '#ff6f00' }}>ST.RETURN</th>
-                <th>TOTAL</th>
-                <th>CL.ST</th>
-                <th>SALES</th>
-                <th style={{ background: '#ff6f00' }}>RATE</th>
-                <th>SALES AMT</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredEntries.map((entry) => {
-                const calc = calcEntry(entry);
-                const isNegativeSales = calc.sales < 0;
-                return (
-                  <tr key={entry.productId} style={isNegativeSales ? { background: '#ffebee' } : {}}>
-                    <td>{entry.sno}</td>
-                    <td>{entry.codeNo}</td>
-                    <td style={{ fontWeight: '600', fontSize: '0.85rem' }}>
-                      {entry.particular}
-                      {isNegativeSales && <span style={{ color: '#c62828', fontSize: '0.7rem', marginLeft: '4px' }}>⚠️</span>}
-                    </td>
-                    <td>
-                      <input type="number" min="0" value={entry.cases || ''}
-                        onChange={(e) => updateEntry(entry.productId, 'cases', e.target.value)}
-                        style={{ width: '60px', padding: '8px', textAlign: 'center', border: '2px solid #ff6f00' }}
-                        placeholder="0" />
-                    </td>
-                    <td>
-                      <input type="number" min="0" value={entry.bottles || ''}
-                        onChange={(e) => updateEntry(entry.productId, 'bottles', e.target.value)}
-                        style={{ width: '60px', padding: '8px', textAlign: 'center', border: '2px solid #ff6f00' }}
-                        placeholder="0" />
-                    </td>
-                    <td style={{ background: '#e3f2fd', fontWeight: '600' }}>{entry.openingStock}</td>
-                    <td>
-                      <input type="number" min="0" value={entry.purchase || ''}
-                        onChange={(e) => updateEntry(entry.productId, 'purchase', e.target.value)}
-                        style={{ width: '60px', padding: '8px', textAlign: 'center', border: '2px solid #ff6f00' }}
-                        placeholder="0" />
-                    </td>
-                    <td>
-                      <input type="number" min="0" value={entry.stockReturn || ''}
-                        onChange={(e) => updateEntry(entry.productId, 'stockReturn', e.target.value)}
-                        style={{ width: '50px', padding: '8px', textAlign: 'center', border: '2px solid #ff6f00' }}
-                        placeholder="0" />
-                    </td>
-                    <td style={{ background: '#f5f5f5' }}>{calc.total}</td>
-                    <td style={{ background: '#e8f5e9', fontWeight: '600' }}>{calc.clst}</td>
-                    <td style={{ 
-                      fontWeight: '700',
-                      color: isNegativeSales ? '#c62828' : calc.sales > 0 ? '#2e7d32' : '#757575',
-                      background: isNegativeSales ? '#ffcdd2' : 'transparent'
-                    }}>
-                      {calc.sales}
-                    </td>
-                    <td>
-                      <input type="number" min="0" value={entry.rate || ''}
-                        onChange={(e) => updateEntry(entry.productId, 'rate', e.target.value)}
-                        style={{ width: '70px', padding: '8px', textAlign: 'center', border: '2px solid #ff6f00' }} />
-                    </td>
-                    <td style={{ 
-                      fontWeight: '700',
-                      color: calc.salesAmt > 0 ? '#1a237e' : calc.salesAmt < 0 ? '#c62828' : '#757575'
-                    }}>
-                      {calc.salesAmt !== 0 ? `₹${formatINR(calc.salesAmt)}` : 0}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-
-        {/* Category Subtotal */}
-        {selectedCategory !== 'ALL' && (
-          <div style={{
-            marginTop: '12px', padding: '12px', background: '#e8eaf6',
-            borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-          }}>
-            <span style={{ fontWeight: '600', color: '#1a237e' }}>
-              {CATEGORIES[selectedCategory]?.label} Subtotal:
-            </span>
-            <span style={{ fontSize: '1.2rem', fontWeight: '700', color: '#1a237e' }}>
-              ₹{formatINR(categoryTotals[selectedCategory] || 0)}
-            </span>
-          </div>
-        )}
-      </div>
-
-      {/* Grand Total per Category (shown when viewing ALL) */}
-      {selectedCategory === 'ALL' && (
+      {/* ===== TABLE MODE ===== */}
+      {mode === 'table' && (
         <div className="card">
-          <h3 style={{ marginBottom: '12px', fontSize: '1.1rem' }}>
-            📊 Grand Total by Category
-          </h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px' }}>
-            {CATEGORY_ORDER.map(catKey => (
-              <div key={catKey} style={{
-                padding: '10px', background: '#f5f5f5', borderRadius: '8px',
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-              }}>
-                <span style={{ fontSize: '0.8rem', fontWeight: '600' }}>
-                  {CATEGORIES[catKey].label}
-                </span>
-                <span style={{ fontWeight: '700', color: '#1a237e', fontSize: '0.9rem' }}>
-                  ₹{formatINR(categoryTotals[catKey] || 0)}
-                </span>
-              </div>
-            ))}
+          <div className="card-header">
+            <h3>All Products ({activeEntries.length} active)</h3>
           </div>
-          <div style={{
-            marginTop: '12px', padding: '14px', background: '#1a237e', borderRadius: '8px',
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-          }}>
-            <span style={{ fontSize: '1rem', fontWeight: '700', color: 'white' }}>
-              GRAND TOTAL (All Categories)
-            </span>
-            <span style={{ fontSize: '1.4rem', fontWeight: '700', color: '#ffeb3b' }}>
-              ₹{formatINR(categoryTotals.GRAND_TOTAL || 0)}
-            </span>
+          <div className="table-wrapper" style={{ maxHeight: '65vh', overflow: 'auto' }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>S.No</th>
+                  <th>Code</th>
+                  <th>Product</th>
+                  <th>OP.ST</th>
+                  <th style={{ background: '#e1f0ff' }}>CASE</th>
+                  <th style={{ background: '#e1f0ff' }}>BOTTLE</th>
+                  <th>CL.ST</th>
+                  <th>SALES</th>
+                  <th>SALES AMT</th>
+                </tr>
+              </thead>
+              <tbody>
+                {activeEntries.map(entry => {
+                  const calc = calcEntry(entry);
+                  return (
+                    <tr key={entry.productId} style={calc.sales < 0 ? { background: '#fff5f8' } : {}}>
+                      <td>{entry.sno}</td>
+                      <td className="text-muted">{entry.codeNo}</td>
+                      <td className="font-bold">{entry.particular}</td>
+                      <td>{entry.openingStock}</td>
+                      <td>
+                        <input type="number" min="0" value={entry.cases||''}
+                          onChange={e => setEntries(prev => prev.map(en => en.productId === entry.productId ? {...en, cases: Number(e.target.value)||0} : en))}
+                          style={{ width: 60, padding: '6px 8px', textAlign: 'center', border: '2px solid var(--primary)' }} />
+                      </td>
+                      <td>
+                        <input type="number" min="0" value={entry.bottles||''}
+                          onChange={e => setEntries(prev => prev.map(en => en.productId === entry.productId ? {...en, bottles: Number(e.target.value)||0} : en))}
+                          style={{ width: 60, padding: '6px 8px', textAlign: 'center', border: '2px solid var(--primary)' }} />
+                      </td>
+                      <td className="font-bold">{calc.clst}</td>
+                      <td style={{ color: calc.sales < 0 ? 'var(--danger)' : calc.sales > 0 ? 'var(--success)' : 'var(--text-muted)', fontWeight: 700 }}>
+                        {calc.sales}
+                      </td>
+                      <td className="font-bold" style={{ color: calc.salesAmt > 0 ? 'var(--primary)' : calc.salesAmt < 0 ? 'var(--danger)' : '' }}>
+                        {calc.salesAmt !== 0 ? `₹${formatINR(calc.salesAmt)}` : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ===== SUMMARY MODE ===== */}
+      {mode === 'summary' && (
+        <div>
+          {/* Case Abstract */}
+          <CaseAbstract entries={entries} calcEntry={calcEntry} />
+
+          {/* Denomination */}
+          <DenominationCounter
+            denomination={denomination} setDenomination={setDenomination}
+            totalCash={totalCash} totalSales={totals.totalSales}
+            posAmount={posAmount} setPosAmount={setPosAmount}
+          />
+
+          {/* Device vs Manual */}
+          <div className="card">
+            <div className="card-header">
+              <h3>📱 Device vs Manual Comparison</h3>
+              {(deviceValues.salesBottles > 0 || deviceValues.salesValue > 0) && (
+                <span className={allDeviceMatched ? 'badge badge-success' : 'badge badge-danger'}>
+                  {allDeviceMatched ? '✓ All Matched' : '✗ Mismatch'}
+                </span>
+              )}
+            </div>
+            <div className="card-body">
+              <div className="grid-4 mb-16">
+                <div>
+                  <label className="form-label">Sales Bottles</label>
+                  <input type="number" value={deviceValues.salesBottles||''} onChange={e => setDeviceValues(p=>({...p, salesBottles: Number(e.target.value)||0}))} placeholder="0" />
+                </div>
+                <div>
+                  <label className="form-label">Closing Bottles</label>
+                  <input type="number" value={deviceValues.closingBottles||''} onChange={e => setDeviceValues(p=>({...p, closingBottles: Number(e.target.value)||0}))} placeholder="0" />
+                </div>
+                <div>
+                  <label className="form-label">Sales Value (₹)</label>
+                  <input type="number" value={deviceValues.salesValue||''} onChange={e => setDeviceValues(p=>({...p, salesValue: Number(e.target.value)||0}))} placeholder="0" />
+                </div>
+                <div>
+                  <label className="form-label">Closing Value (₹)</label>
+                  <input type="number" value={deviceValues.closingValue||''} onChange={e => setDeviceValues(p=>({...p, closingValue: Number(e.target.value)||0}))} placeholder="0" />
+                </div>
+              </div>
+
+              <table>
+                <thead>
+                  <tr>
+                    <th>Source</th><th>Sales Bottles</th><th>Closing Bottles</th><th>Sales Value</th><th>Closing Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td className="font-bold">📱 Device</td>
+                    <td>{deviceValues.salesBottles||0}</td><td>{deviceValues.closingBottles||0}</td>
+                    <td>₹{formatINR(deviceValues.salesValue||0)}</td><td>₹{formatINR(deviceValues.closingValue||0)}</td>
+                  </tr>
+                  <tr style={{ background: '#f9fafb' }}>
+                    <td className="font-bold">📝 Manual</td>
+                    <td>{manualValues.salesBottles}</td><td>{manualValues.closingBottles}</td>
+                    <td>₹{formatINR(manualValues.salesValue)}</td><td>₹{formatINR(manualValues.closingValue)}</td>
+                  </tr>
+                  <tr style={{ background: allDeviceMatched ? '#e8fff3' : '#fff5f8', fontWeight: 700 }}>
+                    <td style={{ color: allDeviceMatched ? 'var(--success)' : 'var(--danger)' }}>Difference</td>
+                    <td style={{ color: deviceDiff.salesBottles === 0 ? 'var(--success)' : 'var(--danger)' }}>{deviceDiff.salesBottles}</td>
+                    <td style={{ color: deviceDiff.closingBottles === 0 ? 'var(--success)' : 'var(--danger)' }}>{deviceDiff.closingBottles}</td>
+                    <td style={{ color: Math.abs(deviceDiff.salesValue) < 1 ? 'var(--success)' : 'var(--danger)' }}>{deviceDiff.salesValue}</td>
+                    <td style={{ color: Math.abs(deviceDiff.closingValue) < 1 ? 'var(--success)' : 'var(--danger)' }}>{deviceDiff.closingValue}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Validation Status */}
+          <div className={cashMatch && totals.totalSales > 0 ? 'status-match' : totals.totalSales > 0 ? 'status-mismatch' : 'card'} style={{ marginBottom: 20 }}>
+            {totals.totalSales > 0 ? (
+              cashMatch ? '✅ Cash + POS matches Grand Total Sales' : `⚠️ Mismatch: Cash+POS ₹${formatINR(cashPlusPOS)} vs Sales ₹${formatINR(totals.totalSales)}`
+            ) : (
+              <div className="card-body text-center text-muted">Enter data to see validation</div>
+            )}
           </div>
         </div>
       )}

@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import Login from './pages/Login';
 import DailyEntry from './pages/DailyEntry';
+import InvoicePage from './pages/InvoicePage';
 import Dashboard from './pages/Dashboard';
 import ManageProducts from './pages/ManageProducts';
 import Analytics from './pages/Analytics';
@@ -17,6 +18,11 @@ function App() {
           <Route path="/" element={
             <Layout>
               <DailyEntry />
+            </Layout>
+          } />
+          <Route path="/invoice" element={
+            <Layout>
+              <InvoicePage />
             </Layout>
           } />
           <Route path="/dashboard" element={
