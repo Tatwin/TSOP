@@ -35,9 +35,17 @@ export default function DailyEntry() {
   const [savingOS, setSavingOS] = useState(false);
   const [entryComplete, setEntryComplete] = useState(false);
 
+  // Opening stock card-based entry state
+  const [osCodeInput, setOsCodeInput] = useState('');
+  const [osFoundProduct, setOsFoundProduct] = useState(null);
+  const [osQtyInput, setOsQtyInput] = useState('');
+  const [osNotFound, setOsNotFound] = useState(false);
+  const [osEnteredList, setOsEnteredList] = useState([]);
+
   // Refs for auto-focus
   const caseInputRef = useRef(null);
   const bottleInputRef = useRef(null);
+  const osQtyRef = useRef(null);
 
   function initEntries() {
     return DEFAULT_PRODUCTS.map(p => ({
@@ -269,6 +277,56 @@ export default function DailyEntry() {
     );
   };
 
+  // Opening stock code search handler
+  const handleOsCodeSearch = (e) => {
+    if (e.key !== 'Enter') return;
+    const input = osCodeInput.trim();
+    if (!input) return;
+    // First try to find by code
+    let product = DEFAULT_PRODUCTS.find(p => p.codeNo === input);
+    // If not found by code, try searching by name
+    if (!product) {
+      const term = input.toLowerCase();
+      product = DEFAULT_PRODUCTS.find(p => p.particular.toLowerCase().includes(term));
+    }
+    if (product) {
+      setOsFoundProduct(product);
+      setOsNotFound(false);
+      setOsQtyInput('');
+      setTimeout(() => osQtyRef.current?.focus(), 50);
+    } else {
+      setOsFoundProduct(null);
+      setOsNotFound(true);
+    }
+  };
+
+  // Confirm opening stock entry
+  const confirmOsEntry = () => {
+    if (!osFoundProduct || !osQtyInput || Number(osQtyInput) <= 0) return;
+    const qty = Number(osQtyInput);
+    // Update the entry's opening stock
+    updateOpeningStock(osFoundProduct.id, qty);
+    // Add to the running list (update if already exists)
+    setOsEnteredList(prev => {
+      const existing = prev.findIndex(item => item.productId === osFoundProduct.id);
+      const newItem = { productId: osFoundProduct.id, codeNo: osFoundProduct.codeNo, particular: osFoundProduct.particular, rate: osFoundProduct.rate, stock: qty };
+      if (existing >= 0) {
+        return prev.map((item, i) => i === existing ? newItem : item);
+      }
+      return [newItem, ...prev];
+    });
+    // Reset for next entry
+    setOsCodeInput('');
+    setOsFoundProduct(null);
+    setOsQtyInput('');
+    setOsNotFound(false);
+  };
+
+  // Handle Enter on qty input for opening stock
+  const handleOsQtyKeyDown = (e) => {
+    if (e.key === 'Enter') confirmOsEntry();
+  };
+
 
   return (
     <div>
@@ -321,45 +379,63 @@ export default function DailyEntry() {
       {/* === Staff Selection === */}
       <div className="card">
         <div className="card-header">
-          <h3>Staff for the Day</h3>
+          <h3>Staff on Duty</h3>
         </div>
         <div className="card-body" style={{ padding: '12px 24px' }}>
           <div className="grid-2 gap-16">
             <div>
-              <label className="form-label">Salesmen</label>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {staffList.salesmen.map(name => (
-                  <label key={name} style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px',
-                    borderRadius: 6, fontSize: '0.8rem', cursor: 'pointer',
-                    background: selectedSalesmen.includes(name) ? '#E8F5E9' : '#F4F6F4',
-                    border: selectedSalesmen.includes(name) ? '1px solid #0E6633' : '1px solid var(--border)',
-                    color: selectedSalesmen.includes(name) ? '#0E6633' : 'var(--text-gray)', fontWeight: 600
-                  }}>
-                    <input type="checkbox" checked={selectedSalesmen.includes(name)}
-                      onChange={() => toggleSalesman(name)} style={{ width: 14, height: 14 }} />
-                    {name}
-                  </label>
+              <label className="form-label" style={{ marginBottom: 6 }}>Salesmen</label>
+              <select
+                onChange={e => { if (e.target.value && !selectedSalesmen.includes(e.target.value)) { setSelectedSalesmen(prev => [...prev, e.target.value]); } e.target.value = ''; }}
+                style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                defaultValue=""
+              >
+                <option value="" disabled>Select salesman...</option>
+                {staffList.salesmen.filter(n => !selectedSalesmen.includes(n)).map(name => (
+                  <option key={name} value={name}>{name}</option>
                 ))}
-              </div>
+              </select>
+              {selectedSalesmen.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                  {selectedSalesmen.map(name => (
+                    <span key={name} onClick={() => setSelectedSalesmen(prev => prev.filter(n => n !== name))}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px',
+                        borderRadius: 12, fontSize: '0.78rem', cursor: 'pointer',
+                        background: '#0E6633', color: '#fff', fontWeight: 600
+                      }}>
+                      {name} <span style={{ marginLeft: 4, fontSize: '0.7rem' }}>✕</span>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
             <div>
-              <label className="form-label">Supervisor</label>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {staffList.supervisors.map(name => (
-                  <label key={name} style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px',
-                    borderRadius: 6, fontSize: '0.8rem', cursor: 'pointer',
-                    background: selectedSupervisors.includes(name) ? '#E8F5E9' : '#F4F6F4',
-                    border: selectedSupervisors.includes(name) ? '1px solid #0E6633' : '1px solid var(--border)',
-                    color: selectedSupervisors.includes(name) ? '#0E6633' : 'var(--text-gray)', fontWeight: 600
-                  }}>
-                    <input type="checkbox" checked={selectedSupervisors.includes(name)}
-                      onChange={() => toggleSupervisor(name)} style={{ width: 14, height: 14 }} />
-                    {name}
-                  </label>
+              <label className="form-label" style={{ marginBottom: 6 }}>Supervisors</label>
+              <select
+                onChange={e => { if (e.target.value && !selectedSupervisors.includes(e.target.value)) { setSelectedSupervisors(prev => [...prev, e.target.value]); } e.target.value = ''; }}
+                style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                defaultValue=""
+              >
+                <option value="" disabled>Select supervisor...</option>
+                {staffList.supervisors.filter(n => !selectedSupervisors.includes(n)).map(name => (
+                  <option key={name} value={name}>{name}</option>
                 ))}
-              </div>
+              </select>
+              {selectedSupervisors.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                  {selectedSupervisors.map(name => (
+                    <span key={name} onClick={() => setSelectedSupervisors(prev => prev.filter(n => n !== name))}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px',
+                        borderRadius: 12, fontSize: '0.78rem', cursor: 'pointer',
+                        background: '#0E6633', color: '#fff', fontWeight: 600
+                      }}>
+                      {name} <span style={{ marginLeft: 4, fontSize: '0.7rem' }}>✕</span>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -612,53 +688,93 @@ export default function DailyEntry() {
             </div>
             <div className="card-body">
               <p className="text-muted text-sm" style={{ marginBottom: 16 }}>
-                Enter opening stock (total bottles) for each product. This is typically previous day's closing stock.
+                Enter product code (or search by name) and press Enter to find product, then enter stock.
               </p>
+
+              {/* Code/Name Input */}
+              <div style={{ marginBottom: 16 }}>
+                <label className="form-label">Enter Product Code or Name</label>
+                <input
+                  type="text"
+                  value={osCodeInput}
+                  onChange={e => { setOsCodeInput(e.target.value); setOsNotFound(false); setOsFoundProduct(null); }}
+                  onKeyDown={handleOsCodeSearch}
+                  placeholder="Type code or product name and press Enter..."
+                  className="input-lg"
+                  style={{ textAlign: 'center', fontSize: '1.3rem', letterSpacing: 2, fontWeight: 700, maxWidth: 500 }}
+                  autoFocus
+                />
+              </div>
+
+              {/* Product Found */}
+              {osFoundProduct && (
+                <div style={{ padding: 16, background: '#E8F5E9', borderRadius: 8, border: '1px solid var(--success)', marginBottom: 16 }}>
+                  <div className="flex-between mb-8">
+                    <div>
+                      <span className="text-muted" style={{ marginRight: 12 }}>{osFoundProduct.codeNo || '--'}</span>
+                      <span className="font-bold" style={{ fontSize: '1rem' }}>{osFoundProduct.particular}</span>
+                    </div>
+                    <span className="badge badge-primary">{'\u20B9'}{osFoundProduct.rate}</span>
+                  </div>
+                  <div className="flex gap-12" style={{ alignItems: 'flex-end', marginTop: 12 }}>
+                    <div style={{ flex: 1 }}>
+                      <label className="form-label">Opening Stock (bottles)</label>
+                      <input
+                        ref={osQtyRef}
+                        type="number" min="0"
+                        value={osQtyInput}
+                        onChange={e => setOsQtyInput(e.target.value)}
+                        onKeyDown={handleOsQtyKeyDown}
+                        placeholder="No. of bottles"
+                        style={{ textAlign: 'center', fontSize: '1.2rem', fontWeight: 700 }}
+                      />
+                    </div>
+                    <button className="btn-success" onClick={confirmOsEntry} disabled={!osQtyInput || Number(osQtyInput) <= 0}>Save & Next</button>
+                  </div>
+                </div>
+              )}
+
+              {/* Not Found */}
+              {osNotFound && (
+                <div style={{ padding: 12, background: '#FEE2E2', borderRadius: 8, border: '1px solid var(--danger)', marginBottom: 16 }}>
+                  <p className="font-bold text-danger">Product "{osCodeInput}" not found. Check code or try searching by name.</p>
+                </div>
+              )}
             </div>
           </div>
 
-          {CATEGORY_ORDER.map(cat => {
-            const catProducts = entries.filter(e => e.category === cat);
-            if (catProducts.length === 0) return null;
-            return (
-              <div key={cat} className="card" style={{ marginBottom: 12 }}>
-                <div className="card-header" style={{ background: '#F4F6F4' }}>
-                  <h4 style={{ fontSize: '0.9rem', color: 'var(--primary)' }}>{CATEGORIES[cat]?.label}</h4>
-                  <span className="badge badge-primary">{catProducts.length} items</span>
-                </div>
-                <div className="card-body" style={{ padding: '8px 16px' }}>
-                  <table>
+          {/* Running list of entered products */}
+          {osEnteredList.length > 0 && (
+            <div className="card">
+              <div className="card-header">
+                <h4 style={{ fontSize: '0.9rem' }}>Products Entered ({osEnteredList.length})</h4>
+              </div>
+              <div className="card-body" style={{ padding: '8px 16px' }}>
+                <div style={{ maxHeight: '40vh', overflow: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                     <thead>
-                      <tr>
-                        <th>Product</th>
-                        <th>Code</th>
-                        <th>Rate</th>
-                        <th style={{ width: 120 }}>Opening Stock (bottles)</th>
+                      <tr style={{ borderBottom: '2px solid var(--border)' }}>
+                        <th style={{ padding: '8px 6px', textAlign: 'left' }}>Code</th>
+                        <th style={{ padding: '8px 6px', textAlign: 'left' }}>Name</th>
+                        <th style={{ padding: '8px 6px', textAlign: 'right' }}>Rate</th>
+                        <th style={{ padding: '8px 6px', textAlign: 'right' }}>Stock</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {catProducts.map(entry => (
-                        <tr key={entry.productId}>
-                          <td className="font-bold">{entry.particular}</td>
-                          <td className="text-muted">{entry.codeNo || '--'}</td>
-                          <td>{entry.rate > 0 ? `\u20B9${entry.rate}` : '--'}</td>
-                          <td>
-                            <input
-                              type="number" min="0"
-                              value={entry.openingStock || ''}
-                              onChange={e => updateOpeningStock(entry.productId, e.target.value)}
-                              placeholder="0"
-                              style={{ width: 100, padding: '6px 8px', textAlign: 'center', border: '2px solid var(--primary)', borderRadius: 6 }}
-                            />
-                          </td>
+                      {osEnteredList.map((item, idx) => (
+                        <tr key={idx} style={{ borderBottom: '1px solid var(--border)', background: idx % 2 === 0 ? 'transparent' : '#F4F6F4' }}>
+                          <td style={{ padding: '7px 6px', color: 'var(--text-muted)' }}>{item.codeNo || '--'}</td>
+                          <td style={{ padding: '7px 6px', fontWeight: 600 }}>{item.particular}</td>
+                          <td style={{ padding: '7px 6px', textAlign: 'right' }}>{'\u20B9'}{item.rate}</td>
+                          <td style={{ padding: '7px 6px', textAlign: 'right', fontWeight: 700, color: 'var(--primary)' }}>{item.stock}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
               </div>
-            );
-          })}
+            </div>
+          )}
         </div>
       )}
 

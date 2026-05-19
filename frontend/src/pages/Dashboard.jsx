@@ -276,7 +276,7 @@ export default function Dashboard() {
                             <th style={{ padding: '8px 6px', textAlign: 'left' }}>Code</th>
                             <th style={{ padding: '8px 6px', textAlign: 'left' }}>Name</th>
                             <th style={{ padding: '8px 6px', textAlign: 'right' }}>Rate</th>
-                            <th style={{ padding: '8px 6px', textAlign: 'center' }}>Case Size</th>
+                            <th style={{ padding: '8px 6px', textAlign: 'center' }}>Stock</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -285,11 +285,12 @@ export default function Dashboard() {
                               <td style={{ padding: '7px 6px', color: 'var(--text-muted)' }}>{p.codeNo || '--'}</td>
                               <td style={{ padding: '7px 6px', fontWeight: 600 }}>{p.particular}</td>
                               <td style={{ padding: '7px 6px', textAlign: 'right' }}>{p.rate > 0 ? `\u20B9${p.rate}` : '--'}</td>
-                              <td style={{ padding: '7px 6px', textAlign: 'center', color: 'var(--text-muted)' }}>{CATEGORIES[cat].bottlesPerCase}</td>
+                              <td style={{ padding: '7px 6px', textAlign: 'center', color: 'var(--text-muted)' }}>&mdash;</td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
+                      <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 8, fontStyle: 'italic' }}>Load a date in Daily Entry to see live stock</p>
                     </div>
                   )}
                 </div>
