@@ -10,37 +10,28 @@ export default function Login() {
   const navigate = useNavigate();
   const inputRefs = [useRef(), useRef(), useRef(), useRef()];
 
-  // Redirect if already authenticated
   useEffect(() => {
-    if (authenticated) {
-      navigate('/', { replace: true });
-    }
+    if (authenticated) navigate('/', { replace: true });
   }, [authenticated, navigate]);
 
   useEffect(() => {
-    // Auto-focus first input
-    if (inputRefs[0].current) {
-      inputRefs[0].current.focus();
-    }
+    inputRefs[0].current?.focus();
   }, []);
 
   const handleChange = (index, value) => {
-    if (value.length > 1) value = value.slice(-1);
-    if (value && !/^\d$/.test(value)) return;
-
+    if (!/^\d*$/.test(value)) return;
     const newPin = [...pin];
-    newPin[index] = value;
+    newPin[index] = value.slice(-1);
     setPin(newPin);
     setError('');
 
-    // Auto-advance to next input
     if (value && index < 3) {
-      inputRefs[index + 1].current.focus();
+      inputRefs[index + 1].current?.focus();
     }
 
     // Auto-submit when all 4 digits entered
-    if (value && index === 3) {
-      const fullPin = newPin.join('');
+    if (index === 3 && value) {
+      const fullPin = [...newPin.slice(0, 3), value.slice(-1)].join('');
       if (fullPin.length === 4) {
         handleSubmit(fullPin);
       }
@@ -49,27 +40,21 @@ export default function Login() {
 
   const handleKeyDown = (index, e) => {
     if (e.key === 'Backspace' && !pin[index] && index > 0) {
-      inputRefs[index - 1].current.focus();
+      inputRefs[index - 1].current?.focus();
     }
   };
 
-  const handleSubmit = async (fullPin) => {
-    if (!fullPin) fullPin = pin.join('');
-    if (fullPin.length !== 4) {
-      setError('Please enter 4-digit PIN');
-      return;
-    }
-
+  const handleSubmit = async (pinStr) => {
+    const fullPin = pinStr || pin.join('');
+    if (fullPin.length !== 4) return;
     setLoading(true);
-    setError('');
-
     try {
       await login(fullPin);
       navigate('/', { replace: true });
     } catch (err) {
-      setError(err.response?.data?.error || 'Invalid PIN. Please try again.');
+      setError('Invalid PIN');
       setPin(['', '', '', '']);
-      inputRefs[0].current.focus();
+      inputRefs[0].current?.focus();
     } finally {
       setLoading(false);
     }
@@ -77,116 +62,79 @@ export default function Login() {
 
   return (
     <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: 'linear-gradient(135deg, #1a237e 0%, #534bae 100%)',
-      padding: '16px'
+      minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'linear-gradient(135deg, #1e1e2d 0%, #2d2d44 50%, #1e1e2d 100%)', padding: 20
     }}>
       <div style={{
-        background: 'white',
-        borderRadius: '16px',
-        padding: '40px',
-        width: '100%',
-        maxWidth: '380px',
-        boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+        background: 'white', borderRadius: 16, padding: '48px 40px',
+        width: '100%', maxWidth: 400, boxShadow: '0 20px 60px rgba(0,0,0,0.4)', textAlign: 'center'
       }}>
-        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-          <h1 style={{ fontSize: '1.5rem', color: '#1a237e', marginBottom: '8px' }}>
-            TASMAC POS
-          </h1>
-          <p style={{ color: '#757575', fontSize: '0.9rem' }}>
-            Shop No. 1745 - Alandurai, Coimbatore
-          </p>
-          <p style={{ color: '#9e9e9e', fontSize: '0.8rem', marginTop: '4px' }}>
-            Owner: ANTONYSAMY.A
-          </p>
+        {/* Logo */}
+        <div style={{
+          width: 64, height: 64, borderRadius: 16, margin: '0 auto 20px',
+          background: 'linear-gradient(135deg, #3699ff, #7239ea)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: '1.5rem', color: 'white', fontWeight: 800
+        }}>
+          T
         </div>
 
-        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-          <p style={{ fontSize: '1rem', fontWeight: '600', color: '#333', marginBottom: '8px' }}>
-            Enter PIN to Edit/Save
-          </p>
-          <p style={{ fontSize: '0.8rem', color: '#757575' }}>
-            PIN required only for editing. Viewing is free.
-          </p>
-        </div>
+        <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#181c32', marginBottom: 4 }}>TASMAC POS</h1>
+        <p style={{ color: '#a1a5b7', fontSize: '0.85rem', marginBottom: 32 }}>
+          Shop No. 1745 • Alandurai, Coimbatore
+        </p>
 
-        {error && (
-          <div style={{
-            background: '#ffebee',
-            color: '#c62828',
-            padding: '12px',
-            borderRadius: '8px',
-            marginBottom: '16px',
-            fontSize: '0.9rem',
-            textAlign: 'center'
-          }}>
-            {error}
-          </div>
-        )}
+        <p style={{ fontSize: '0.9rem', color: '#5e6278', marginBottom: 24, fontWeight: 500 }}>
+          Enter 4-digit PIN to unlock editing
+        </p>
 
-        {/* PIN Input Boxes */}
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginBottom: '24px' }}>
-          {pin.map((digit, index) => (
+        {/* PIN Inputs */}
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginBottom: 24 }}>
+          {pin.map((digit, idx) => (
             <input
-              key={index}
-              ref={inputRefs[index]}
-              type="tel"
+              key={idx}
+              ref={inputRefs[idx]}
+              type="password"
               inputMode="numeric"
               maxLength={1}
               value={digit}
-              onChange={(e) => handleChange(index, e.target.value)}
-              onKeyDown={(e) => handleKeyDown(index, e)}
-              disabled={loading}
+              onChange={e => handleChange(idx, e.target.value)}
+              onKeyDown={e => handleKeyDown(idx, e)}
               style={{
-                width: '56px',
-                height: '64px',
-                textAlign: 'center',
-                fontSize: '1.8rem',
-                fontWeight: '700',
-                borderRadius: '12px',
-                border: `2px solid ${error ? '#c62828' : digit ? '#1a237e' : '#e0e0e0'}`,
-                outline: 'none',
-                transition: 'border-color 0.2s',
-                color: '#1a237e'
+                width: 56, height: 64, textAlign: 'center', fontSize: '1.8rem', fontWeight: 700,
+                borderRadius: 12, border: `2px solid ${error ? '#f1416c' : digit ? '#3699ff' : '#e4e6ef'}`,
+                background: digit ? '#f1faff' : '#f9fafb',
+                outline: 'none', transition: 'all 0.2s',
+                color: '#181c32'
               }}
-              onFocus={(e) => e.target.style.borderColor = '#1a237e'}
-              onBlur={(e) => { if (!digit) e.target.style.borderColor = '#e0e0e0'; }}
             />
           ))}
         </div>
 
+        {error && (
+          <p style={{ color: '#f1416c', fontWeight: 600, fontSize: '0.85rem', marginBottom: 16 }}>{error}</p>
+        )}
+
+        {loading && (
+          <p style={{ color: '#3699ff', fontSize: '0.85rem' }}>Verifying...</p>
+        )}
+
+        <div style={{ marginTop: 32, padding: '16px', background: '#f9fafb', borderRadius: 8 }}>
+          <p style={{ fontSize: '0.75rem', color: '#a1a5b7' }}>
+            PIN is only needed for saving/editing data.<br/>
+            Viewing and exporting does not require PIN.
+          </p>
+        </div>
+
         <button
-          onClick={() => handleSubmit()}
-          disabled={loading || pin.join('').length !== 4}
-          className="btn-primary btn-large"
-          style={{ 
-            width: '100%', 
-            opacity: (loading || pin.join('').length !== 4) ? 0.7 : 1,
-            padding: '14px',
-            fontSize: '1.1rem'
+          onClick={() => navigate('/')}
+          style={{
+            marginTop: 16, padding: '10px 20px', background: 'transparent',
+            border: 'none', color: '#3699ff', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600
           }}
         >
-          {loading ? 'Verifying...' : 'Unlock'}
+          ← Continue without PIN (view only)
         </button>
-
-        <div style={{ marginTop: '20px', textAlign: 'center' }}>
-          <button
-            onClick={() => navigate('/')}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#757575',
-              fontSize: '0.85rem',
-              cursor: 'pointer',
-              textDecoration: 'underline'
-            }}
-          >
-            Continue without PIN (View Only)
-          </button>
-        </div>
       </div>
     </div>
   );
