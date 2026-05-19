@@ -7,6 +7,12 @@ const { DEFAULT_PRODUCTS, CATEGORIES } = require('../data/products');
 let products = DEFAULT_PRODUCTS.map(p => ({ ...p, status: 'active' }));
 let categories = { ...CATEGORIES };
 
+// In-memory staff storage
+let staff = {
+  salesmen: ['SHANMUGASUNDARAM.P', 'ARUMUGAM.A', 'RAMESHKUMAR.A', 'SHANMUGASUNDARAM.M'],
+  supervisors: ['ANTONYSAMY.A', 'SARAVAN']
+};
+
 // GET /api/products - Get all products
 router.get('/', (req, res) => {
   res.json({ products, categories });
@@ -36,6 +42,86 @@ router.post('/categories', authMiddleware, (req, res) => {
   };
 
   res.json({ success: true, category: { key: normalizedKey, ...categories[normalizedKey] } });
+});
+
+// PUT /api/products/categories/:key - Edit a category
+router.put('/categories/:key', authMiddleware, (req, res) => {
+  const { key } = req.params;
+  const { label, bottlesPerCase } = req.body;
+
+  if (!categories[key]) {
+    return res.status(404).json({ error: 'Category not found' });
+  }
+
+  if (label) categories[key].label = label;
+  if (bottlesPerCase !== undefined) categories[key].bottlesPerCase = Number(bottlesPerCase) || 48;
+
+  res.json({ success: true, category: { key, ...categories[key] } });
+});
+
+// GET /api/products/staff - Get staff list
+router.get('/staff', (req, res) => {
+  res.json({ staff });
+});
+
+// POST /api/products/staff - Add a salesman or supervisor
+router.post('/staff', authMiddleware, (req, res) => {
+  const { type, name } = req.body;
+
+  if (!type || !name) {
+    return res.status(400).json({ error: 'Type and name are required' });
+  }
+
+  if (type !== 'salesmen' && type !== 'supervisors') {
+    return res.status(400).json({ error: 'Type must be salesmen or supervisors' });
+  }
+
+  staff[type].push(name.toUpperCase());
+  res.json({ success: true, staff });
+});
+
+// PUT /api/products/staff/:index - Edit a staff member
+router.put('/staff/:index', authMiddleware, (req, res) => {
+  const { index } = req.params;
+  const { type, newName } = req.body;
+
+  if (!type || !newName) {
+    return res.status(400).json({ error: 'Type and newName are required' });
+  }
+
+  if (type !== 'salesmen' && type !== 'supervisors') {
+    return res.status(400).json({ error: 'Type must be salesmen or supervisors' });
+  }
+
+  const idx = Number(index);
+  if (idx < 0 || idx >= staff[type].length) {
+    return res.status(404).json({ error: 'Staff member not found' });
+  }
+
+  staff[type][idx] = newName.toUpperCase();
+  res.json({ success: true, staff });
+});
+
+// DELETE /api/products/staff/:index - Delete a staff member
+router.delete('/staff/:index', authMiddleware, (req, res) => {
+  const { index } = req.params;
+  const { type } = req.body;
+
+  if (!type) {
+    return res.status(400).json({ error: 'Type is required' });
+  }
+
+  if (type !== 'salesmen' && type !== 'supervisors') {
+    return res.status(400).json({ error: 'Type must be salesmen or supervisors' });
+  }
+
+  const idx = Number(index);
+  if (idx < 0 || idx >= staff[type].length) {
+    return res.status(404).json({ error: 'Staff member not found' });
+  }
+
+  staff[type].splice(idx, 1);
+  res.json({ success: true, staff });
 });
 
 // PUT /api/products/:id/rate - Update product rate

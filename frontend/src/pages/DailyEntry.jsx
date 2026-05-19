@@ -20,6 +20,12 @@ export default function DailyEntry() {
   const [posAmount, setPosAmount] = useState(0);
   const [deviceValues, setDeviceValues] = useState({ salesBottles:0, closingBottles:0, salesValue:0, closingValue:0 });
 
+  // Staff selection state
+  const [staffList, setStaffList] = useState({ salesmen: [], supervisors: [] });
+  const [selectedSalesmen, setSelectedSalesmen] = useState([]);
+  const [selectedSupervisors, setSelectedSupervisors] = useState([]);
+
+
   // UI state
   const [mode, setMode] = useState('sequential'); // 'sequential' | 'table' | 'summary' | 'openingStock'
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -27,6 +33,7 @@ export default function DailyEntry() {
   const [saveMsg, setSaveMsg] = useState('');
   const [dataLoaded, setDataLoaded] = useState(false);
   const [savingOS, setSavingOS] = useState(false);
+  const [entryComplete, setEntryComplete] = useState(false);
 
   // Refs for auto-focus
   const caseInputRef = useRef(null);
@@ -40,6 +47,18 @@ export default function DailyEntry() {
       purchase: 0, stockReturn: 0, rate: p.rate
     }));
   }
+
+  // Load staff on mount
+  useEffect(() => {
+    api.get('/products/staff').then(res => {
+      if (res.data.staff) {
+        setStaffList(res.data.staff);
+        setSelectedSalesmen(res.data.staff.salesmen || []);
+        setSelectedSupervisors(res.data.staff.supervisors || []);
+      }
+    }).catch(() => {});
+  }, []);
+
 
   // Active products: has opening stock OR purchase > 0
   const activeEntries = useMemo(() => {
@@ -80,6 +99,7 @@ export default function DailyEntry() {
     });
     return { totalSales, totalPurchaseValue, totalClValue, totalSalesBottles, totalClosingBottles };
   }, [entries, calcEntry]);
+
 
   const totalCash = useMemo(() => {
     let t = denomination.coins || 0;
@@ -133,6 +153,7 @@ export default function DailyEntry() {
       }
       setDataLoaded(true);
       setCurrentIndex(0);
+      setEntryComplete(false);
       setSaveMsg('Data loaded');
       setTimeout(() => setSaveMsg(''), 2000);
     } catch (err) {
@@ -140,6 +161,7 @@ export default function DailyEntry() {
       setDataLoaded(true);
     }
   };
+
 
   // Save
   const handleSave = async () => {
@@ -164,6 +186,7 @@ export default function DailyEntry() {
       const res = await api.post('/export/daily', {
         date: selectedDate, entries: enriched,
         metadata: { invoiceAmount: totals.totalSales }, posAmount, deviceValues,
+        staffSelection: { salesmen: selectedSalesmen, supervisors: selectedSupervisors },
         denomination: { notes: Object.fromEntries(Object.entries(denomination.notes).map(([k,v])=>[k,{count:v}])), coins: denomination.coins, totalCash }
       }, { responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([res.data]));
@@ -191,6 +214,7 @@ export default function DailyEntry() {
     finally { setSavingOS(false); setTimeout(() => setSaveMsg(''), 3000); }
   };
 
+
   // Update opening stock for a product
   const updateOpeningStock = (productId, value) => {
     setEntries(prev => prev.map(e =>
@@ -206,16 +230,18 @@ export default function DailyEntry() {
     ));
   };
 
-  // Handle Enter key in sequential mode
+  // Handle Enter key in sequential mode — TASK 1 FIX
   const handleKeyDown = (e, field) => {
     if (e.key === 'Enter') {
       if (field === 'cases') {
         bottleInputRef.current?.focus();
       } else if (field === 'bottles') {
-        // Move to next product
         if (currentIndex < activeEntries.length - 1) {
           setCurrentIndex(currentIndex + 1);
           setTimeout(() => caseInputRef.current?.focus(), 50);
+        } else {
+          // LAST ITEM: mark entry complete, auto-advance to POS/comparison
+          setEntryComplete(true);
         }
       }
     }
@@ -223,17 +249,30 @@ export default function DailyEntry() {
 
   // Focus case input when index changes
   useEffect(() => {
-    if (mode === 'sequential') {
+    if (mode === 'sequential' && !entryComplete) {
       setTimeout(() => caseInputRef.current?.focus(), 100);
     }
-  }, [currentIndex, mode]);
+  }, [currentIndex, mode, entryComplete]);
 
   // Current entry calculations
   const currentCalc = currentEntry ? calcEntry(currentEntry) : null;
 
+  // Toggle staff selection
+  const toggleSalesman = (name) => {
+    setSelectedSalesmen(prev =>
+      prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]
+    );
+  };
+  const toggleSupervisor = (name) => {
+    setSelectedSupervisors(prev =>
+      prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]
+    );
+  };
+
+
   return (
     <div>
-      {/* Top Controls */}
+      {/* === 1. Top Controls: Date + Load + Mode === */}
       <div className="card">
         <div className="card-body" style={{ padding: '16px 24px' }}>
           <div className="flex-between flex-wrap gap-12">
@@ -249,10 +288,9 @@ export default function DailyEntry() {
             </div>
 
             <div className="flex gap-8" style={{ alignItems: 'center' }}>
-              {/* Mode switcher */}
-              <div className="flex gap-4" style={{ background: '#f5f8fa', borderRadius: 8, padding: 3 }}>
-                {[{id:'sequential',label:'Entry'},{id:'openingStock',label:'Opening Stock'},{id:'summary',label:'Summary'},{id:'table',label:'Table'}].map(m => (
-                  <button key={m.id} onClick={() => setMode(m.id)}
+              <div className="flex gap-4" style={{ background: '#F4F6F4', borderRadius: 8, padding: 3 }}>
+                {[{id:'sequential',label:'Daily Sales'},{id:'openingStock',label:'Opening Stock'},{id:'summary',label:'Summary'},{id:'table',label:'Table'}].map(m => (
+                  <button key={m.id} onClick={() => { setMode(m.id); setEntryComplete(false); }}
                     style={{
                       padding: '6px 14px', borderRadius: 6, fontSize: '0.8rem', fontWeight: 600, border: 'none',
                       background: mode === m.id ? 'var(--primary)' : 'transparent',
@@ -265,13 +303,12 @@ export default function DailyEntry() {
               <button className="btn-success" onClick={handleSave} disabled={saving}>
                 {saving ? '...' : authenticated ? 'Save' : 'Login to Save'}
               </button>
-              <button className="btn-warning" onClick={handleExport}>Export</button>
             </div>
           </div>
 
           {saveMsg && (
             <div style={{ marginTop: 12, padding: '8px 16px', borderRadius: 8,
-              background: saveMsg.includes('fail') || saveMsg.includes('Failed') ? '#fff5f8' : '#e8fff3',
+              background: saveMsg.includes('fail') || saveMsg.includes('Failed') ? '#FEE2E2' : '#E8F5E9',
               color: saveMsg.includes('fail') || saveMsg.includes('Failed') ? 'var(--danger)' : 'var(--success)',
               fontWeight: 600, fontSize: '0.85rem' }}>
               {saveMsg}
@@ -280,19 +317,68 @@ export default function DailyEntry() {
         </div>
       </div>
 
-      {/* Stats Row */}
+
+      {/* === Staff Selection === */}
+      <div className="card">
+        <div className="card-header">
+          <h3>Staff for the Day</h3>
+        </div>
+        <div className="card-body" style={{ padding: '12px 24px' }}>
+          <div className="grid-2 gap-16">
+            <div>
+              <label className="form-label">Salesmen</label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {staffList.salesmen.map(name => (
+                  <label key={name} style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px',
+                    borderRadius: 6, fontSize: '0.8rem', cursor: 'pointer',
+                    background: selectedSalesmen.includes(name) ? '#E8F5E9' : '#F4F6F4',
+                    border: selectedSalesmen.includes(name) ? '1px solid #0E6633' : '1px solid var(--border)',
+                    color: selectedSalesmen.includes(name) ? '#0E6633' : 'var(--text-gray)', fontWeight: 600
+                  }}>
+                    <input type="checkbox" checked={selectedSalesmen.includes(name)}
+                      onChange={() => toggleSalesman(name)} style={{ width: 14, height: 14 }} />
+                    {name}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="form-label">Supervisor</label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {staffList.supervisors.map(name => (
+                  <label key={name} style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px',
+                    borderRadius: 6, fontSize: '0.8rem', cursor: 'pointer',
+                    background: selectedSupervisors.includes(name) ? '#E8F5E9' : '#F4F6F4',
+                    border: selectedSupervisors.includes(name) ? '1px solid #0E6633' : '1px solid var(--border)',
+                    color: selectedSupervisors.includes(name) ? '#0E6633' : 'var(--text-gray)', fontWeight: 600
+                  }}>
+                    <input type="checkbox" checked={selectedSupervisors.includes(name)}
+                      onChange={() => toggleSupervisor(name)} style={{ width: 14, height: 14 }} />
+                    {name}
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+
+      {/* === 2. Stats Bar === */}
       <div className="grid-4 mb-20">
         <div className="stat-card primary">
           <div className="stat-label">Grand Total Sales</div>
-          <div className="stat-value">₹{formatINR(totals.totalSales)}</div>
+          <div className="stat-value">{'\u20B9'}{formatINR(totals.totalSales)}</div>
         </div>
         <div className="stat-card success">
           <div className="stat-label">Cash + POS</div>
-          <div className="stat-value">₹{formatINR(cashPlusPOS)}</div>
+          <div className="stat-value">{'\u20B9'}{formatINR(cashPlusPOS)}</div>
         </div>
         <div className="stat-card warning">
           <div className="stat-label">Remittance (Bank)</div>
-          <div className="stat-value">₹{formatINR(remittance)}</div>
+          <div className="stat-value">{'\u20B9'}{formatINR(remittance)}</div>
         </div>
         <div className="stat-card danger">
           <div className="stat-label">Products Entered</div>
@@ -300,18 +386,19 @@ export default function DailyEntry() {
         </div>
       </div>
 
-      {/* ===== SEQUENTIAL MODE ===== */}
+
+      {/* === 3. Daily Sales Entry (Sequential / Table / Opening Stock) === */}
       {mode === 'sequential' && (
         <div>
           {activeEntries.length === 0 ? (
             <div className="card">
               <div className="card-body text-center" style={{ padding: 60 }}>
-                <div style={{ fontSize: '1.5rem', marginBottom: 16, color: 'var(--text-muted)' }}>No Data</div>
+                <div style={{ fontSize: '1.5rem', marginBottom: 16, color: 'var(--text-muted)' }}>[!]</div>
                 <h3 style={{ marginBottom: 8 }}>No Active Products</h3>
                 <p className="text-muted">Click "Load Data" to fetch opening stock, or go to "Purchase Invoice" to add purchases first.</p>
               </div>
             </div>
-          ) : (
+          ) : !entryComplete ? (
             <>
               {/* Progress */}
               <div className="card" style={{ marginBottom: 16 }}>
@@ -335,15 +422,16 @@ export default function DailyEntry() {
                 <div className="entry-card">
                   <div className="flex-between mb-8">
                     <span className="badge badge-primary">{CATEGORIES[currentEntry.category]?.label}</span>
-                    <span className="text-xs text-muted">Code: {currentEntry.codeNo || '—'}</span>
+                    <span className="text-xs text-muted">Code: {currentEntry.codeNo || '--'}</span>
                   </div>
 
                   <div className="product-name">{currentEntry.particular}</div>
                   <div className="product-meta">
                     <span>OP.ST: <strong>{currentEntry.openingStock}</strong></span>
-                    <span>Rate: <strong>₹{currentEntry.rate}</strong></span>
+                    <span>Rate: <strong>{'\u20B9'}{currentEntry.rate}</strong></span>
                     <span>Purchase: <strong>{currentEntry.purchase}</strong></span>
                   </div>
+
 
                   {/* Input Fields */}
                   <div className="entry-grid">
@@ -396,20 +484,21 @@ export default function DailyEntry() {
                     <div className="live-calc-item">
                       <div className="label">Sales Amt</div>
                       <div className={`value ${currentCalc.salesAmt < 0 ? 'negative' : currentCalc.salesAmt > 0 ? 'positive' : ''}`}>
-                        ₹{formatINR(currentCalc.salesAmt)}
+                        {'\u20B9'}{formatINR(currentCalc.salesAmt)}
                       </div>
                     </div>
                     <div className="live-calc-item">
                       <div className="label">CL Value</div>
-                      <div className="value">₹{formatINR(currentCalc.clValue)}</div>
+                      <div className="value">{'\u20B9'}{formatINR(currentCalc.clValue)}</div>
                     </div>
                   </div>
 
+
                   {/* Negative sales warning */}
                   {currentCalc.sales < 0 && (
-                    <div style={{ marginTop: 16, padding: '10px 16px', background: '#fff5f8', borderRadius: 8, border: '1px solid var(--danger)' }}>
+                    <div style={{ marginTop: 16, padding: '10px 16px', background: '#FEE2E2', borderRadius: 8, border: '1px solid var(--danger)' }}>
                       <span style={{ color: 'var(--danger)', fontWeight: 700, fontSize: '0.85rem' }}>
-                        Warning: Negative sales! Check closing stock values.
+                        [!] Warning: Negative sales! Check closing stock values.
                       </span>
                     </div>
                   )}
@@ -419,23 +508,42 @@ export default function DailyEntry() {
                     <button className="btn-secondary"
                       disabled={currentIndex === 0}
                       onClick={() => setCurrentIndex(Math.max(0, currentIndex - 1))}>
-                      ← Previous
+                      Prev
                     </button>
-                    <span className="text-muted text-sm">Press Enter to move next</span>
+                    <span className="text-muted text-sm">Press Enter to advance</span>
                     <button className="btn-primary"
-                      disabled={currentIndex >= activeEntries.length - 1}
-                      onClick={() => setCurrentIndex(Math.min(activeEntries.length - 1, currentIndex + 1))}>
-                      Next →
+                      onClick={() => {
+                        if (currentIndex >= activeEntries.length - 1) {
+                          setEntryComplete(true);
+                        } else {
+                          setCurrentIndex(Math.min(activeEntries.length - 1, currentIndex + 1));
+                        }
+                      }}>
+                      {currentIndex >= activeEntries.length - 1 ? 'Finish' : 'Next'}
                     </button>
                   </div>
                 </div>
               )}
             </>
+          ) : (
+            /* Entry Complete Message */
+            <div className="card">
+              <div className="card-body text-center" style={{ padding: 40 }}>
+                <div style={{ fontSize: '1.2rem', color: 'var(--success)', fontWeight: 700, marginBottom: 8 }}>
+                  [OK] All {activeEntries.length} products entered!
+                </div>
+                <p className="text-muted text-sm mb-16">Proceed to enter POS amount and verify device comparison below.</p>
+                <button className="btn-secondary" onClick={() => { setEntryComplete(false); setCurrentIndex(0); }}>
+                  Go Back to Entries
+                </button>
+              </div>
+            </div>
           )}
         </div>
       )}
 
-      {/* ===== TABLE MODE ===== */}
+
+      {/* === TABLE MODE === */}
       {mode === 'table' && (
         <div className="card">
           <div className="card-header">
@@ -449,8 +557,8 @@ export default function DailyEntry() {
                   <th>Code</th>
                   <th>Product</th>
                   <th>OP.ST</th>
-                  <th style={{ background: '#e1f0ff' }}>CASE</th>
-                  <th style={{ background: '#e1f0ff' }}>BOTTLE</th>
+                  <th style={{ background: '#E8F5E9' }}>CASE</th>
+                  <th style={{ background: '#E8F5E9' }}>BOTTLE</th>
                   <th>CL.ST</th>
                   <th>SALES</th>
                   <th>SALES AMT</th>
@@ -460,7 +568,7 @@ export default function DailyEntry() {
                 {activeEntries.map(entry => {
                   const calc = calcEntry(entry);
                   return (
-                    <tr key={entry.productId} style={calc.sales < 0 ? { background: '#fff5f8' } : {}}>
+                    <tr key={entry.productId} style={calc.sales < 0 ? { background: '#FEE2E2' } : {}}>
                       <td>{entry.sno}</td>
                       <td className="text-muted">{entry.codeNo}</td>
                       <td className="font-bold">{entry.particular}</td>
@@ -480,7 +588,7 @@ export default function DailyEntry() {
                         {calc.sales}
                       </td>
                       <td className="font-bold" style={{ color: calc.salesAmt > 0 ? 'var(--primary)' : calc.salesAmt < 0 ? 'var(--danger)' : '' }}>
-                        {calc.salesAmt !== 0 ? `₹${formatINR(calc.salesAmt)}` : '—'}
+                        {calc.salesAmt !== 0 ? `\u20B9${formatINR(calc.salesAmt)}` : '--'}
                       </td>
                     </tr>
                   );
@@ -491,7 +599,8 @@ export default function DailyEntry() {
         </div>
       )}
 
-      {/* ===== OPENING STOCK MODE ===== */}
+
+      {/* === OPENING STOCK MODE === */}
       {mode === 'openingStock' && (
         <div>
           <div className="card" style={{ marginBottom: 16 }}>
@@ -513,7 +622,7 @@ export default function DailyEntry() {
             if (catProducts.length === 0) return null;
             return (
               <div key={cat} className="card" style={{ marginBottom: 12 }}>
-                <div className="card-header" style={{ background: '#f5f8fa' }}>
+                <div className="card-header" style={{ background: '#F4F6F4' }}>
                   <h4 style={{ fontSize: '0.9rem', color: 'var(--primary)' }}>{CATEGORIES[cat]?.label}</h4>
                   <span className="badge badge-primary">{catProducts.length} items</span>
                 </div>
@@ -531,12 +640,11 @@ export default function DailyEntry() {
                       {catProducts.map(entry => (
                         <tr key={entry.productId}>
                           <td className="font-bold">{entry.particular}</td>
-                          <td className="text-muted">{entry.codeNo || '—'}</td>
-                          <td>{entry.rate > 0 ? `₹${entry.rate}` : '—'}</td>
+                          <td className="text-muted">{entry.codeNo || '--'}</td>
+                          <td>{entry.rate > 0 ? `\u20B9${entry.rate}` : '--'}</td>
                           <td>
                             <input
-                              type="number"
-                              min="0"
+                              type="number" min="0"
                               value={entry.openingStock || ''}
                               onChange={e => updateOpeningStock(entry.productId, e.target.value)}
                               placeholder="0"
@@ -554,85 +662,153 @@ export default function DailyEntry() {
         </div>
       )}
 
-      {/* ===== SUMMARY MODE ===== */}
+
+      {/* === SUMMARY MODE === */}
       {mode === 'summary' && (
         <div>
-          {/* Case Abstract */}
           <CaseAbstract entries={entries} calcEntry={calcEntry} />
+        </div>
+      )}
 
-          {/* Denomination */}
-          <DenominationCounter
-            denomination={denomination} setDenomination={setDenomination}
-            totalCash={totalCash} totalSales={totals.totalSales}
-            posAmount={posAmount} setPosAmount={setPosAmount}
-          />
-
-          {/* Device vs Manual */}
-          <div className="card">
-            <div className="card-header">
-              <h3>Device vs Manual Comparison</h3>
-              {(deviceValues.salesBottles > 0 || deviceValues.salesValue > 0) && (
-                <span className={allDeviceMatched ? 'badge badge-success' : 'badge badge-danger'}>
-                  {allDeviceMatched ? 'All Matched' : 'Mismatch'}
-                </span>
-              )}
-            </div>
-            <div className="card-body">
-              <div className="grid-4 mb-16">
-                <div>
-                  <label className="form-label">Sales Bottles</label>
-                  <input type="number" value={deviceValues.salesBottles||''} onChange={e => setDeviceValues(p=>({...p, salesBottles: Number(e.target.value)||0}))} placeholder="0" />
-                </div>
-                <div>
-                  <label className="form-label">Closing Bottles</label>
-                  <input type="number" value={deviceValues.closingBottles||''} onChange={e => setDeviceValues(p=>({...p, closingBottles: Number(e.target.value)||0}))} placeholder="0" />
-                </div>
-                <div>
-                  <label className="form-label">Sales Value (₹)</label>
-                  <input type="number" value={deviceValues.salesValue||''} onChange={e => setDeviceValues(p=>({...p, salesValue: Number(e.target.value)||0}))} placeholder="0" />
-                </div>
-                <div>
-                  <label className="form-label">Closing Value (₹)</label>
-                  <input type="number" value={deviceValues.closingValue||''} onChange={e => setDeviceValues(p=>({...p, closingValue: Number(e.target.value)||0}))} placeholder="0" />
-                </div>
+      {/* === 4. POS Amount (shown after entry complete or always in non-sequential modes) === */}
+      {(mode !== 'sequential' || entryComplete) && (
+        <div className="card" style={{ border: '2px solid var(--primary)' }}>
+          <div className="card-header">
+            <h3>POS / Digital Payment Amount</h3>
+          </div>
+          <div className="card-body">
+            <div className="flex-between flex-wrap gap-12">
+              <div>
+                <label className="form-label" style={{ marginBottom: 4 }}>POS / Card / GPay Amount</label>
+                <p className="text-xs text-muted">Amount received via card swipe or digital payment</p>
               </div>
-
-              <table>
-                <thead>
-                  <tr>
-                    <th>Source</th><th>Sales Bottles</th><th>Closing Bottles</th><th>Sales Value</th><th>Closing Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td className="font-bold">Device</td>
-                    <td>{deviceValues.salesBottles||0}</td><td>{deviceValues.closingBottles||0}</td>
-                    <td>₹{formatINR(deviceValues.salesValue||0)}</td><td>₹{formatINR(deviceValues.closingValue||0)}</td>
-                  </tr>
-                  <tr style={{ background: '#f9fafb' }}>
-                    <td className="font-bold">Manual</td>
-                    <td>{manualValues.salesBottles}</td><td>{manualValues.closingBottles}</td>
-                    <td>₹{formatINR(manualValues.salesValue)}</td><td>₹{formatINR(manualValues.closingValue)}</td>
-                  </tr>
-                  <tr style={{ background: allDeviceMatched ? '#e8fff3' : '#fff5f8', fontWeight: 700 }}>
-                    <td style={{ color: allDeviceMatched ? 'var(--success)' : 'var(--danger)' }}>Difference</td>
-                    <td style={{ color: deviceDiff.salesBottles === 0 ? 'var(--success)' : 'var(--danger)' }}>{deviceDiff.salesBottles}</td>
-                    <td style={{ color: deviceDiff.closingBottles === 0 ? 'var(--success)' : 'var(--danger)' }}>{deviceDiff.closingBottles}</td>
-                    <td style={{ color: Math.abs(deviceDiff.salesValue) < 1 ? 'var(--success)' : 'var(--danger)' }}>{deviceDiff.salesValue}</td>
-                    <td style={{ color: Math.abs(deviceDiff.closingValue) < 1 ? 'var(--success)' : 'var(--danger)' }}>{deviceDiff.closingValue}</td>
-                  </tr>
-                </tbody>
-              </table>
+              <input
+                type="number" min="0" value={posAmount || ''}
+                onChange={e => setPosAmount(Number(e.target.value) || 0)}
+                placeholder="{'\u20B9'} 0"
+                style={{ width: 180, textAlign: 'center', fontSize: '1.3rem', fontWeight: 700 }}
+              />
             </div>
           </div>
+        </div>
+      )}
 
-          {/* Validation Status */}
-          <div className={cashMatch && totals.totalSales > 0 ? 'status-match' : totals.totalSales > 0 ? 'status-mismatch' : 'card'} style={{ marginBottom: 20 }}>
-            {totals.totalSales > 0 ? (
-              cashMatch ? 'Cash + POS matches Grand Total Sales' : `Mismatch: Cash+POS ${formatINR(cashPlusPOS)} vs Sales ${formatINR(totals.totalSales)}`
-            ) : (
-              <div className="card-body text-center text-muted">Enter data to see validation</div>
+
+      {/* === 5. Device vs Manual Comparison (always visible after entry or in non-sequential) === */}
+      {(mode !== 'sequential' || entryComplete) && (
+        <div className="card">
+          <div className="card-header">
+            <h3>Device vs Manual Comparison</h3>
+            {(deviceValues.salesBottles > 0 || deviceValues.salesValue > 0) && (
+              <span className={allDeviceMatched ? 'badge badge-success' : 'badge badge-danger'}>
+                {allDeviceMatched ? '[OK] All Matched' : '[X] Mismatch'}
+              </span>
             )}
+          </div>
+          <div className="card-body">
+            <div className="grid-4 mb-16">
+              <div>
+                <label className="form-label">Sales Bottles</label>
+                <input type="number" value={deviceValues.salesBottles||''} onChange={e => setDeviceValues(p=>({...p, salesBottles: Number(e.target.value)||0}))} placeholder="0" />
+              </div>
+              <div>
+                <label className="form-label">Closing Bottles</label>
+                <input type="number" value={deviceValues.closingBottles||''} onChange={e => setDeviceValues(p=>({...p, closingBottles: Number(e.target.value)||0}))} placeholder="0" />
+              </div>
+              <div>
+                <label className="form-label">Sales Value</label>
+                <input type="number" value={deviceValues.salesValue||''} onChange={e => setDeviceValues(p=>({...p, salesValue: Number(e.target.value)||0}))} placeholder="0" />
+              </div>
+              <div>
+                <label className="form-label">Closing Value</label>
+                <input type="number" value={deviceValues.closingValue||''} onChange={e => setDeviceValues(p=>({...p, closingValue: Number(e.target.value)||0}))} placeholder="0" />
+              </div>
+            </div>
+
+            <table>
+              <thead>
+                <tr>
+                  <th>Source</th><th>Sales Bottles</th><th>Closing Bottles</th><th>Sales Value</th><th>Closing Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td className="font-bold">Device</td>
+                  <td>{deviceValues.salesBottles||0}</td><td>{deviceValues.closingBottles||0}</td>
+                  <td>{'\u20B9'}{formatINR(deviceValues.salesValue||0)}</td><td>{'\u20B9'}{formatINR(deviceValues.closingValue||0)}</td>
+                </tr>
+                <tr style={{ background: '#F4F6F4' }}>
+                  <td className="font-bold">Manual</td>
+                  <td>{manualValues.salesBottles}</td><td>{manualValues.closingBottles}</td>
+                  <td>{'\u20B9'}{formatINR(manualValues.salesValue)}</td><td>{'\u20B9'}{formatINR(manualValues.closingValue)}</td>
+                </tr>
+                <tr style={{ background: allDeviceMatched ? '#E8F5E9' : '#FEE2E2', fontWeight: 700 }}>
+                  <td style={{ color: allDeviceMatched ? 'var(--success)' : 'var(--danger)' }}>Difference</td>
+                  <td style={{ color: deviceDiff.salesBottles === 0 ? 'var(--success)' : 'var(--danger)' }}>{deviceDiff.salesBottles}</td>
+                  <td style={{ color: deviceDiff.closingBottles === 0 ? 'var(--success)' : 'var(--danger)' }}>{deviceDiff.closingBottles}</td>
+                  <td style={{ color: Math.abs(deviceDiff.salesValue) < 1 ? 'var(--success)' : 'var(--danger)' }}>{deviceDiff.salesValue}</td>
+                  <td style={{ color: Math.abs(deviceDiff.closingValue) < 1 ? 'var(--success)' : 'var(--danger)' }}>{deviceDiff.closingValue}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+
+      {/* === 6. Denomination Counter === */}
+      {(mode !== 'sequential' || entryComplete) && (
+        <DenominationCounter
+          denomination={denomination} setDenomination={setDenomination}
+          totalCash={totalCash} totalSales={totals.totalSales}
+          posAmount={posAmount} setPosAmount={setPosAmount}
+        />
+      )}
+
+      {/* === 7. Validation Status === */}
+      {(mode !== 'sequential' || entryComplete) && (
+        <div className={cashMatch && totals.totalSales > 0 ? 'status-match' : totals.totalSales > 0 ? 'status-mismatch' : 'card'} style={{ marginBottom: 20 }}>
+          {totals.totalSales > 0 ? (
+            cashMatch
+              ? '[OK] Cash + POS matches Grand Total Sales'
+              : `[X] Mismatch: Cash+POS \u20B9${formatINR(cashPlusPOS)} vs Sales \u20B9${formatINR(totals.totalSales)}`
+          ) : (
+            <div className="card-body text-center text-muted">Enter data to see validation</div>
+          )}
+        </div>
+      )}
+
+      {/* === 8. Export Button === */}
+      {(mode !== 'sequential' || entryComplete) && (
+        <div className="card">
+          <div className="card-body" style={{ padding: '16px 24px' }}>
+            <div className="flex-between">
+              <div>
+                <h3 style={{ fontSize: '0.95rem', marginBottom: 4 }}>Export to Excel</h3>
+                <p className="text-xs text-muted">
+                  {cashMatch && totals.totalSales > 0
+                    ? 'Validation passed. Ready to export.'
+                    : totals.totalSales > 0
+                      ? 'Validation has mismatches. You can still export with confirmation.'
+                      : 'Enter sales data first.'}
+                </p>
+              </div>
+              <button
+                className={`btn-warning ${!cashMatch && totals.totalSales > 0 ? 'btn-disabled-style' : ''}`}
+                onClick={() => {
+                  if (!cashMatch && totals.totalSales > 0) {
+                    if (window.confirm('Cash + POS does not match sales total. Export anyway?')) {
+                      handleExport();
+                    }
+                  } else {
+                    handleExport();
+                  }
+                }}
+                disabled={totals.totalSales === 0}
+              >
+                Export Excel
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -14,6 +14,13 @@ export default function Dashboard() {
   const [monthlyData, setMonthlyData] = useState(null);
   const [expandedCategory, setExpandedCategory] = useState(null);
 
+
+  // Stock view state
+  const [stockDate, setStockDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [stockData, setStockData] = useState(null);
+  const [stockLoading, setStockLoading] = useState(false);
+  const [stockSearch, setStockSearch] = useState('');
+
   const loadToday = async () => {
     setLoading(true);
     try {
@@ -48,6 +55,46 @@ export default function Dashboard() {
     finally { setLoading(false); }
   };
 
+
+  // Load stock for a specific date
+  const loadStock = async () => {
+    setStockLoading(true);
+    try {
+      const res = await api.get(`/daily-entry/${stockDate}`);
+      const entries = res.data.entries || [];
+      // Build stock data from closing stock in saved entries
+      const stockItems = entries.filter(e => {
+        const caseSize = CATEGORIES[e.category]?.bottlesPerCase || 48;
+        const clst = (e.cases || 0) * caseSize + (e.bottles || 0);
+        return clst > 0;
+      }).map(e => {
+        const caseSize = CATEGORIES[e.category]?.bottlesPerCase || 48;
+        const clst = (e.cases || 0) * caseSize + (e.bottles || 0);
+        const rate = e.rate || 0;
+        return {
+          productId: e.productId,
+          particular: e.particular,
+          category: e.category,
+          closingStock: clst,
+          stockValue: clst * rate,
+          rate
+        };
+      });
+      setStockData(stockItems);
+    } catch (err) {
+      console.error(err);
+      setStockData([]);
+    }
+    finally { setStockLoading(false); }
+  };
+
+  const filteredStock = useMemo(() => {
+    if (!stockData) return [];
+    if (!stockSearch) return stockData;
+    const term = stockSearch.toLowerCase();
+    return stockData.filter(s => s.particular.toLowerCase().includes(term) || (CATEGORIES[s.category]?.label || '').toLowerCase().includes(term));
+  }, [stockData, stockSearch]);
+
   return (
     <div>
       {/* Today Summary */}
@@ -55,7 +102,7 @@ export default function Dashboard() {
         <div className="card-header">
           <h3>Today's Summary</h3>
           <button className="btn-primary btn-sm" onClick={loadToday} disabled={loading}>
-            {loading ? 'Loading...' : '↻ Refresh'}
+            {loading ? 'Loading...' : 'Refresh'}
           </button>
         </div>
         <div className="card-body">
@@ -68,24 +115,86 @@ export default function Dashboard() {
             <div className="grid-4">
               <div className="stat-card primary">
                 <div className="stat-label">Total Sales</div>
-                <div className="stat-value">₹{formatINR(todayData.totalSales)}</div>
+                <div className="stat-value">{'\u20B9'}{formatINR(todayData.totalSales)}</div>
               </div>
               <div className="stat-card warning">
                 <div className="stat-label">Total Purchase</div>
-                <div className="stat-value">₹{formatINR(todayData.totalPurchase)}</div>
+                <div className="stat-value">{'\u20B9'}{formatINR(todayData.totalPurchase)}</div>
               </div>
               <div className="stat-card success">
                 <div className="stat-label">Closing Stock Value</div>
-                <div className="stat-value">₹{formatINR(todayData.totalClValue)}</div>
+                <div className="stat-value">{'\u20B9'}{formatINR(todayData.totalClValue)}</div>
               </div>
               <div className="stat-card danger">
                 <div className="stat-label">Cash Collected</div>
-                <div className="stat-value">₹{formatINR(todayData.totalCash)}</div>
+                <div className="stat-value">{'\u20B9'}{formatINR(todayData.totalCash)}</div>
               </div>
             </div>
           )}
         </div>
       </div>
+
+
+      {/* Current Stock Section (Task 5) */}
+      <div className="card">
+        <div className="card-header">
+          <h3>Current Stock</h3>
+          <div className="flex gap-8" style={{ alignItems: 'center' }}>
+            <input type="date" value={stockDate} onChange={e => setStockDate(e.target.value)} style={{ width: 160, padding: '8px 12px' }} />
+            <button className="btn-primary btn-sm" onClick={loadStock} disabled={stockLoading}>
+              {stockLoading ? 'Loading...' : 'Load Stock'}
+            </button>
+          </div>
+        </div>
+        <div className="card-body">
+          {!stockData ? (
+            <p className="text-muted text-center" style={{ padding: 20 }}>Select a date and click "Load Stock" to view closing stock for that day.</p>
+          ) : stockData.length === 0 ? (
+            <p className="text-muted text-center" style={{ padding: 20 }}>No stock data found for this date. Make sure daily entry has been saved.</p>
+          ) : (
+            <>
+              <div style={{ marginBottom: 12 }}>
+                <input
+                  type="text" value={stockSearch} onChange={e => setStockSearch(e.target.value)}
+                  placeholder="Search by product name or category..."
+                  style={{ maxWidth: 350, padding: '8px 12px' }}
+                />
+              </div>
+              <div className="table-wrapper" style={{ maxHeight: '50vh', overflow: 'auto' }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Product Name</th>
+                      <th>Category</th>
+                      <th style={{ textAlign: 'right' }}>Current Stock (bottles)</th>
+                      <th style={{ textAlign: 'right' }}>Stock Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredStock.map(item => (
+                      <tr key={item.productId}>
+                        <td className="font-bold">{item.particular}</td>
+                        <td className="text-muted">{CATEGORIES[item.category]?.label || item.category}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 700 }}>{item.closingStock}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--primary)' }}>{'\u20B9'}{formatINR(item.stockValue)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ background: '#F4F6F4' }}>
+                      <td className="font-bold">Total</td>
+                      <td></td>
+                      <td style={{ textAlign: 'right', fontWeight: 700 }}>{filteredStock.reduce((s, i) => s + i.closingStock, 0)}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--primary)' }}>{'\u20B9'}{formatINR(filteredStock.reduce((s, i) => s + i.stockValue, 0))}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
 
       {/* Monthly View */}
       <div className="card">
@@ -114,9 +223,9 @@ export default function Dashboard() {
                     return (
                       <tr key={date}>
                         <td className="font-bold">{date}</td>
-                        <td className="text-primary font-bold">₹{formatINR(sales)}</td>
-                        <td>₹{formatINR(purchase)}</td>
-                        <td>₹{formatINR(clValue)}</td>
+                        <td className="text-primary font-bold">{'\u20B9'}{formatINR(sales)}</td>
+                        <td>{'\u20B9'}{formatINR(purchase)}</td>
+                        <td>{'\u20B9'}{formatINR(clValue)}</td>
                       </tr>
                     );
                   })}
@@ -139,44 +248,44 @@ export default function Dashboard() {
               const catProducts = DEFAULT_PRODUCTS.filter(p => p.category === cat);
               const isExpanded = expandedCategory === cat;
               return (
-                <div key={cat} style={{ border: '1px solid var(--border, #e0e0e0)', borderRadius: 8, overflow: 'hidden' }}>
+                <div key={cat} style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
                   <div
                     onClick={() => setExpandedCategory(isExpanded ? null : cat)}
                     style={{
                       padding: '14px 18px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                      background: isExpanded ? '#f1faff' : '#f9fafb',
-                      borderBottom: isExpanded ? '1px solid var(--border, #e0e0e0)' : 'none',
+                      background: isExpanded ? '#E8F5E9' : '#F4F6F4',
+                      borderBottom: isExpanded ? '1px solid var(--border)' : 'none',
                       transition: 'background 0.2s'
                     }}
                   >
                     <div>
-                      <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#181c32' }}>{CATEGORIES[cat].label}</div>
-                      <div style={{ fontSize: '0.75rem', color: '#a1a5b7', marginTop: 2 }}>
+                      <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-dark)' }}>{CATEGORIES[cat].label}</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 2 }}>
                         {catProducts.length} items | {CATEGORIES[cat].bottlesPerCase} per case
                       </div>
                     </div>
-                    <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--primary, #3699ff)' }}>
-                      {isExpanded ? '−' : '+'}
+                    <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--primary)' }}>
+                      {isExpanded ? '[-]' : '[+]'}
                     </span>
                   </div>
                   {isExpanded && (
                     <div style={{ padding: '12px 18px', background: 'white' }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                         <thead>
-                          <tr style={{ borderBottom: '2px solid #e0e0e0' }}>
-                            <th style={{ padding: '8px 6px', textAlign: 'left', fontWeight: 700, color: '#5e6278' }}>Code</th>
-                            <th style={{ padding: '8px 6px', textAlign: 'left', fontWeight: 700, color: '#5e6278' }}>Name</th>
-                            <th style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: '#5e6278' }}>Rate</th>
-                            <th style={{ padding: '8px 6px', textAlign: 'center', fontWeight: 700, color: '#5e6278' }}>Case Size</th>
+                          <tr style={{ borderBottom: '2px solid var(--border)' }}>
+                            <th style={{ padding: '8px 6px', textAlign: 'left' }}>Code</th>
+                            <th style={{ padding: '8px 6px', textAlign: 'left' }}>Name</th>
+                            <th style={{ padding: '8px 6px', textAlign: 'right' }}>Rate</th>
+                            <th style={{ padding: '8px 6px', textAlign: 'center' }}>Case Size</th>
                           </tr>
                         </thead>
                         <tbody>
                           {catProducts.map((p, idx) => (
-                            <tr key={p.id} style={{ borderBottom: '1px solid #f1f1f2', background: idx % 2 === 0 ? 'transparent' : '#fafbfc' }}>
-                              <td style={{ padding: '7px 6px', color: '#a1a5b7' }}>{p.codeNo || '—'}</td>
+                            <tr key={p.id} style={{ borderBottom: '1px solid var(--border)', background: idx % 2 === 0 ? 'transparent' : '#F4F6F4' }}>
+                              <td style={{ padding: '7px 6px', color: 'var(--text-muted)' }}>{p.codeNo || '--'}</td>
                               <td style={{ padding: '7px 6px', fontWeight: 600 }}>{p.particular}</td>
-                              <td style={{ padding: '7px 6px', textAlign: 'right', color: '#181c32' }}>{p.rate > 0 ? `₹${p.rate}` : '—'}</td>
-                              <td style={{ padding: '7px 6px', textAlign: 'center', color: '#a1a5b7' }}>{CATEGORIES[cat].bottlesPerCase}</td>
+                              <td style={{ padding: '7px 6px', textAlign: 'right' }}>{p.rate > 0 ? `\u20B9${p.rate}` : '--'}</td>
+                              <td style={{ padding: '7px 6px', textAlign: 'center', color: 'var(--text-muted)' }}>{CATEGORIES[cat].bottlesPerCase}</td>
                             </tr>
                           ))}
                         </tbody>

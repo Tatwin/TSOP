@@ -19,7 +19,7 @@ function getDayOfWeek(date) {
 // POST /api/export/daily - Export daily data as Excel
 router.post('/daily', authMiddleware, (req, res) => {
   try {
-    const { date, entries, metadata, denomination } = req.body;
+    const { date, entries, metadata, denomination, posAmount, deviceValues, staffSelection } = req.body;
     const dateObj = new Date(date);
     const sheetName = `${getMonthAbbr(dateObj)}-${String(dateObj.getDate()).padStart(2, '0')}`;
     const dayOfWeek = getDayOfWeek(dateObj);
@@ -49,17 +49,24 @@ router.post('/daily', authMiddleware, (req, res) => {
       dayOfWeek
     ]);
     
-    // Row 5: Invoice amount & salesmen
+    // Row 5: Salesmen and supervisor from selection or defaults
+    const salesmenNames = (staffSelection && staffSelection.salesmen && staffSelection.salesmen.length > 0)
+      ? staffSelection.salesmen.map((n, i) => `${i+1}.${n}`).join(', ')
+      : '1.SHANMUGASUNDARAM.P, 2.ARUMUGAM.A, 3.RAMESHKUMAR.A, 4.SHANMUGASUNDARAM.M';
+    const supervisorNames = (staffSelection && staffSelection.supervisors && staffSelection.supervisors.length > 0)
+      ? staffSelection.supervisors.join(', ')
+      : 'ANTONYSAMY.A';
+    
     const totalSalesAmt = entries.reduce((sum, e) => sum + (e.salesAmt || 0), 0);
     wsData.push([
       `INVOICE AMOUNT: ${totalSalesAmt}`, '',
-      'SALES MAN: 1.SHANMUGASUNDARAM.P, 2.ARUMUGAM.A, 3.RAMESHKUMAR.A, 4.SHANMUGASUNDARAM.M'
+      `SALES MAN: ${salesmenNames}`
     ]);
     
-    // Row 6: Category & Owner
+    // Row 6: Supervisor & Owner
     wsData.push([
       '', '',
-      'OWNER: ANTONYSAMY.A', '',
+      `SUPERVISOR: ${supervisorNames}`, '',
       'MOBILE NO-99429 10707, 99422 10707'
     ]);
     
@@ -87,7 +94,6 @@ router.post('/daily', authMiddleware, (req, res) => {
         wsData.push([catLabel]);
       }
 
-      const rowNum = wsData.length + 1; // 1-indexed for Excel formulas
       const cases = entry.cases || 0;
       const bottles = entry.bottles || 0;
       const opst = entry.openingStock || 0;
@@ -96,14 +102,14 @@ router.post('/daily', authMiddleware, (req, res) => {
       const rate = entry.rate || product.rate || 0;
       
       // Calculate values
-      const clst = cases * caseSize + bottles; // J = D*caseSize + E
-      const total = opst + purchase - stockReturn; // I = F + G - H
-      const sales = total - clst; // K = I - J
-      const salesAmt = sales * rate; // M = K * L
-      const clValue = clst * rate; // N = J * L
-      const opValue = opst * rate; // O = F * L
-      const purchaseValue = purchase * rate; // P = G * L
-      const stockReturnValue = stockReturn * rate; // Q = H * L
+      const clst = cases * caseSize + bottles;
+      const total = opst + purchase - stockReturn;
+      const sales = total - clst;
+      const salesAmt = sales * rate;
+      const clValue = clst * rate;
+      const opValue = opst * rate;
+      const purchaseValue = purchase * rate;
+      const stockReturnValue = stockReturn * rate;
 
       wsData.push([
         entry.sno || product.sno || idx + 1,
@@ -128,8 +134,6 @@ router.post('/daily', authMiddleware, (req, res) => {
 
     // Add totals row
     wsData.push([]);
-    const dataStartRow = 9; // Row where data starts (after headers)
-    const dataEndRow = wsData.length - 1;
     wsData.push([
       'TOTAL', '', '', '', '', '', '', '', '',
       '', '',  '',
@@ -138,6 +142,42 @@ router.post('/daily', authMiddleware, (req, res) => {
       entries.reduce((s, e) => s + (e.opValue || 0), 0),
       entries.reduce((s, e) => s + (e.purchaseValue || 0), 0),
       entries.reduce((s, e) => s + (e.stockReturnValue || 0), 0)
+    ]);
+
+    // Add POS Amount section
+    wsData.push([]);
+    wsData.push(['POS / DIGITAL PAYMENT']);
+    wsData.push(['POS Amount', posAmount || 0]);
+    wsData.push(['Cash Sales (Remittance)', totalSalesAmt - (posAmount || 0)]);
+
+    // Add Device vs Manual Comparison
+    wsData.push([]);
+    wsData.push(['DEVICE vs MANUAL COMPARISON']);
+    wsData.push(['', 'Sales Bottles', 'Closing Bottles', 'Sales Value', 'Closing Value']);
+    
+    const manualSalesBottles = entries.reduce((s, e) => {
+      const category = CATEGORIES[e.category];
+      const caseSize = category ? category.bottlesPerCase : 48;
+      const clst = (e.cases || 0) * caseSize + (e.bottles || 0);
+      const total = (e.openingStock || 0) + (e.purchase || 0) - (e.stockReturn || 0);
+      const sales = total - clst;
+      return s + (sales > 0 ? sales : 0);
+    }, 0);
+    const manualClosingBottles = entries.reduce((s, e) => {
+      const category = CATEGORIES[e.category];
+      const caseSize = category ? category.bottlesPerCase : 48;
+      return s + ((e.cases || 0) * caseSize + (e.bottles || 0));
+    }, 0);
+    const manualSalesValue = totalSalesAmt;
+    const manualClosingValue = entries.reduce((s, e) => s + (e.clValue || 0), 0);
+
+    wsData.push(['Device', deviceValues?.salesBottles || 0, deviceValues?.closingBottles || 0, deviceValues?.salesValue || 0, deviceValues?.closingValue || 0]);
+    wsData.push(['Manual', manualSalesBottles, manualClosingBottles, manualSalesValue, manualClosingValue]);
+    wsData.push(['Difference',
+      (deviceValues?.salesBottles || 0) - manualSalesBottles,
+      (deviceValues?.closingBottles || 0) - manualClosingBottles,
+      (deviceValues?.salesValue || 0) - manualSalesValue,
+      (deviceValues?.closingValue || 0) - manualClosingValue
     ]);
 
     // Add denomination section
@@ -149,7 +189,7 @@ router.post('/daily', authMiddleware, (req, res) => {
       const notes = [500, 200, 100, 50, 20, 10];
       notes.forEach(note => {
         const count = denomination.notes?.[note]?.count || 0;
-        wsData.push([`₹${note}`, count, count * note]);
+        wsData.push([`Rs.${note}`, count, count * note]);
       });
       wsData.push(['Coins', '', denomination.coins || 0]);
       wsData.push(['TOTAL CASH', '', denomination.totalCash || 0]);
