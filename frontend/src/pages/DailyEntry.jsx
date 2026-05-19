@@ -4,6 +4,8 @@ import { CATEGORIES, DEFAULT_PRODUCTS, CATEGORY_ORDER } from '../data/products';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import DenominationCounter from '../components/DenominationCounter';
+import CaseAbstract from '../components/CaseAbstract';
+import InvoiceSection from '../components/InvoiceSection';
 
 function formatDate(d) {
   return d.toISOString().split('T')[0];
@@ -19,7 +21,7 @@ export default function DailyEntry() {
   const [selectedDate, setSelectedDate] = useState(formatDate(new Date()));
   const [selectedCategory, setSelectedCategory] = useState('ALL');
   const [entries, setEntries] = useState(() => initEntries());
-  const [metadata, setMetadata] = useState({ invoiceNo: '', invoiceDate: '', invoiceAmount: 0 });
+  const [invoices, setInvoices] = useState([{ invoiceNo: '', invoiceDate: '', invoiceAmount: 0 }]);
   const [denomination, setDenomination] = useState(initDenomination());
   const [posAmount, setPosAmount] = useState(0);
   const [openingStock, setOpeningStock] = useState({});
@@ -28,6 +30,8 @@ export default function DailyEntry() {
   const [saveMsg, setSaveMsg] = useState('');
   const [showDenomination, setShowDenomination] = useState(false);
   const [dataLoaded, setDataLoaded] = useState(false);
+  const [showActiveOnly, setShowActiveOnly] = useState(true);
+  const [showCaseAbstract, setShowCaseAbstract] = useState(false);
 
 
   // Device vs Manual comparison state
@@ -86,7 +90,14 @@ export default function DailyEntry() {
         })));
       }
 
-      if (entryRes.data.metadata) setMetadata(entryRes.data.metadata);
+      if (entryRes.data.invoices) setInvoices(entryRes.data.invoices);
+      else if (entryRes.data.metadata) {
+        setInvoices([{
+          invoiceNo: entryRes.data.metadata.invoiceNo || '',
+          invoiceDate: entryRes.data.metadata.invoiceDate || selectedDate,
+          invoiceAmount: entryRes.data.metadata.invoiceAmount || 0
+        }]);
+      }
       if (entryRes.data.posAmount != null) setPosAmount(entryRes.data.posAmount);
       if (entryRes.data.deviceValues) setDeviceValues(entryRes.data.deviceValues);
 
@@ -169,7 +180,6 @@ export default function DailyEntry() {
     return total;
   }, [denomination]);
 
-  // NEW validation: Cash + POS = Grand Total Sales
   const cashPlusPOS = totalCash + posAmount;
   const cashMatch = Math.abs(cashPlusPOS - totals.totalSales) < 1;
 
@@ -202,20 +212,28 @@ export default function DailyEntry() {
     ));
   };
 
-  // Filter entries by category
+  // Auto-hide: filter products with 0 opening AND 0 purchase
   const filteredEntries = useMemo(() => {
-    if (selectedCategory === 'ALL') return entries;
-    return entries.filter(e => e.category === selectedCategory);
-  }, [entries, selectedCategory]);
+    let result = entries;
+    if (selectedCategory !== 'ALL') {
+      result = result.filter(e => e.category === selectedCategory);
+    }
+    if (showActiveOnly) {
+      result = result.filter(e => (e.openingStock || 0) > 0 || (e.purchase || 0) > 0);
+    }
+    return result;
+  }, [entries, selectedCategory, showActiveOnly]);
+
+  const activeCount = useMemo(() => {
+    return entries.filter(e => (e.openingStock || 0) > 0 || (e.purchase || 0) > 0).length;
+  }, [entries]);
 
 
   // Save data - requires PIN auth
   const handleSave = async () => {
     if (!authenticated) {
       setSaveMsg('PIN required to save. Please login first.');
-      setTimeout(() => {
-        navigate('/login');
-      }, 1500);
+      setTimeout(() => { navigate('/login'); }, 1500);
       return;
     }
     setSaving(true);
@@ -228,7 +246,8 @@ export default function DailyEntry() {
 
       await api.post(`/daily-entry/${selectedDate}`, {
         entries: enrichedEntries,
-        metadata: { ...metadata, invoiceAmount: totals.totalSales },
+        metadata: { invoiceAmount: totals.totalSales },
+        invoices,
         posAmount,
         deviceValues
       });
@@ -255,7 +274,6 @@ export default function DailyEntry() {
     }
   };
 
-
   // Export to Excel
   const handleExport = async () => {
     setExporting(true);
@@ -268,7 +286,8 @@ export default function DailyEntry() {
       const response = await api.post('/export/daily', {
         date: selectedDate,
         entries: enrichedEntries,
-        metadata: { ...metadata, invoiceAmount: totals.totalSales },
+        metadata: { invoiceAmount: totals.totalSales },
+        invoices,
         posAmount,
         deviceValues,
         denomination: {
@@ -330,6 +349,13 @@ export default function DailyEntry() {
         >
           {showDenomination ? 'Hide Cash' : 'Cash Counter'}
         </button>
+        <button
+          onClick={() => setShowCaseAbstract(!showCaseAbstract)}
+          className="btn-secondary"
+          style={{ height: '48px', background: showCaseAbstract ? '#e3f2fd' : '#e0e0e0' }}
+        >
+          {showCaseAbstract ? 'Hide Cases' : '📦 Cases'}
+        </button>
         {!authenticated && (
           <button onClick={() => navigate('/login')} className="btn-primary" style={{ height: '48px', background: '#ff6f00' }}>
             🔑 Enter PIN
@@ -383,7 +409,7 @@ export default function DailyEntry() {
         <div className={cashMatch ? 'card status-match' : 'card status-mismatch'} 
              style={{ textAlign: 'center', padding: '12px', fontSize: '1rem', fontWeight: '700' }}>
           {cashMatch ? (
-            <span>✅ CASH + POS MATCHES GRAND TOTAL SALES — All Good!</span>
+            <span>✅ CASH + POS MATCHES GRAND TOTAL SALES</span>
           ) : (
             <span>⚠️ MISMATCH: Cash+POS ₹{formatINR(cashPlusPOS)} vs Sales ₹{formatINR(totals.totalSales)} (Diff: ₹{formatINR(Math.abs(cashPlusPOS - totals.totalSales))})</span>
           )}
@@ -403,10 +429,12 @@ export default function DailyEntry() {
               </span>
             ))}
           </div>
-          <div style={{ fontSize: '0.75rem', color: '#757575', marginTop: '6px' }}>
-            SALES = OP.ST + PURCHASE - STOCK_RETURN - CL.ST. Check data for these items.
-          </div>
         </div>
+      )}
+
+      {/* Case Abstract Section */}
+      {showCaseAbstract && (
+        <CaseAbstract entries={entries} calcEntry={calcEntry} />
       )}
 
       {/* Denomination Counter */}
@@ -498,7 +526,6 @@ export default function DailyEntry() {
           </table>
         </div>
 
-
         {/* Match/Mismatch indicator */}
         {(deviceValues.salesBottles > 0 || deviceValues.closingBottles > 0 || deviceValues.salesValue > 0 || deviceValues.closingValue > 0) && (
           <div style={{
@@ -507,37 +534,23 @@ export default function DailyEntry() {
             color: allDeviceMatched ? '#2e7d32' : '#c62828',
             border: `2px solid ${allDeviceMatched ? '#2e7d32' : '#c62828'}`
           }}>
-            {allDeviceMatched ? '✅ All Matched — Device and Manual values are identical' : '⚠️ WARNING: Device and Manual values DO NOT match! Please check entries.'}
+            {allDeviceMatched ? '✅ All Matched' : '⚠️ WARNING: Device and Manual values DO NOT match!'}
           </div>
         )}
       </div>
 
-      {/* Invoice Metadata */}
-      <div className="card">
-        <h3 style={{ marginBottom: '12px', fontSize: '1rem' }}>Invoice Details</h3>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-          <div style={{ flex: '1 1 150px' }}>
-            <label style={{ fontSize: '0.8rem', fontWeight: '600' }}>Invoice No</label>
-            <input type="text" value={metadata.invoiceNo || ''}
-              onChange={(e) => setMetadata(m => ({ ...m, invoiceNo: e.target.value }))}
-              placeholder="Invoice number" />
-          </div>
-          <div style={{ flex: '1 1 150px' }}>
-            <label style={{ fontSize: '0.8rem', fontWeight: '600' }}>Invoice Date</label>
-            <input type="date" value={metadata.invoiceDate || selectedDate}
-              onChange={(e) => setMetadata(m => ({ ...m, invoiceDate: e.target.value }))} />
-          </div>
-          <div style={{ flex: '1 1 150px' }}>
-            <label style={{ fontSize: '0.8rem', fontWeight: '600' }}>Invoice Amount (Auto)</label>
-            <input type="text" value={`₹${formatINR(totals.totalSales)}`} readOnly style={{ background: '#f5f5f5' }} />
-          </div>
-        </div>
-      </div>
 
+      {/* Multiple Invoices Section */}
+      <InvoiceSection
+        invoices={invoices}
+        setInvoices={setInvoices}
+        selectedDate={selectedDate}
+        totalSales={totals.totalSales}
+      />
 
-      {/* Category Filter */}
+      {/* Category Filter + Auto-hide toggle */}
       <div className="card" style={{ padding: '12px' }}>
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '10px' }}>
           <span style={{ fontWeight: '600', fontSize: '0.9rem' }}>Category:</span>
           <button
             onClick={() => setSelectedCategory('ALL')}
@@ -567,6 +580,25 @@ export default function DailyEntry() {
               </button>
             );
           })}
+        </div>
+        {/* Auto-hide toggle */}
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', borderTop: '1px solid #e0e0e0', paddingTop: '10px' }}>
+          <button
+            onClick={() => setShowActiveOnly(!showActiveOnly)}
+            style={{
+              padding: '8px 16px', borderRadius: '6px',
+              background: showActiveOnly ? '#e8f5e9' : '#fff3e0',
+              border: `2px solid ${showActiveOnly ? '#2e7d32' : '#e65100'}`,
+              color: showActiveOnly ? '#2e7d32' : '#e65100',
+              fontSize: '0.85rem', cursor: 'pointer', fontWeight: '600'
+            }}
+          >
+            {showActiveOnly ? '👁️ Show Active Only' : '📋 Show All Products'}
+          </button>
+          <span style={{ fontSize: '0.8rem', color: '#757575' }}>
+            Showing {filteredEntries.length} of {entries.length} products
+            {showActiveOnly && ` (${activeCount} active)`}
+          </span>
         </div>
       </div>
 
@@ -617,7 +649,6 @@ export default function DailyEntry() {
                         placeholder="0" />
                     </td>
                     <td style={{ background: '#e3f2fd', fontWeight: '600' }}>{entry.openingStock}</td>
-
                     <td>
                       <input type="number" min="0" value={entry.purchase || ''}
                         onChange={(e) => updateEntry(entry.productId, 'purchase', e.target.value)}
@@ -638,7 +669,6 @@ export default function DailyEntry() {
                       background: isNegativeSales ? '#ffcdd2' : 'transparent'
                     }}>
                       {calc.sales}
-                      {isNegativeSales && ' ⚠️'}
                     </td>
                     <td>
                       <input type="number" min="0" value={entry.rate || ''}
@@ -687,7 +717,9 @@ export default function DailyEntry() {
                 padding: '10px', background: '#f5f5f5', borderRadius: '8px',
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center'
               }}>
-                <span style={{ fontSize: '0.8rem', fontWeight: '600' }}>{CATEGORIES[catKey].label}</span>
+                <span style={{ fontSize: '0.8rem', fontWeight: '600' }}>
+                  {CATEGORIES[catKey].label}
+                </span>
                 <span style={{ fontWeight: '700', color: '#1a237e', fontSize: '0.9rem' }}>
                   ₹{formatINR(categoryTotals[catKey] || 0)}
                 </span>

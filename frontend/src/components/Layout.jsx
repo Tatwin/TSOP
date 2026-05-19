@@ -7,6 +7,13 @@ export default function Layout({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
 
+  const navItems = [
+    { path: '/', label: 'Daily Entry' },
+    { path: '/dashboard', label: 'Dashboard' },
+    { path: '/analytics', label: 'Analytics' },
+    { path: '/manage-products', label: 'Products' },
+  ];
+
   return (
     <div>
       {/* Header */}
@@ -25,35 +32,25 @@ export default function Layout({ children }) {
             <p style={{ fontSize: '0.75rem', opacity: 0.8 }}>Shop No. 1745 - Alandurai</p>
           </div>
           
-          <nav style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <button
-              onClick={() => navigate('/')}
-              style={{
-                padding: '8px 16px',
-                borderRadius: '6px',
-                border: 'none',
-                background: location.pathname === '/' ? 'rgba(255,255,255,0.2)' : 'transparent',
-                color: 'white',
-                fontSize: '0.9rem',
-                cursor: 'pointer'
-              }}
-            >
-              Daily Entry
-            </button>
-            <button
-              onClick={() => navigate('/dashboard')}
-              style={{
-                padding: '8px 16px',
-                borderRadius: '6px',
-                border: 'none',
-                background: location.pathname === '/dashboard' ? 'rgba(255,255,255,0.2)' : 'transparent',
-                color: 'white',
-                fontSize: '0.9rem',
-                cursor: 'pointer'
-              }}
-            >
-              Dashboard
-            </button>
+          <nav style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+            {navItems.map(item => (
+              <button
+                key={item.path}
+                onClick={() => navigate(item.path)}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: location.pathname === item.path ? 'rgba(255,255,255,0.2)' : 'transparent',
+                  color: 'white',
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                  fontWeight: location.pathname === item.path ? '700' : '400'
+                }}
+              >
+                {item.label}
+              </button>
+            ))}
             {authenticated ? (
               <>
                 <span style={{ fontSize: '0.8rem', opacity: 0.8, marginLeft: '8px' }}>
