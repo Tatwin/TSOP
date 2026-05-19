@@ -1,7 +1,18 @@
 node_modules/
 dist/
+dist-electron/
 .env
 *.log
 .DS_Store
 backend/data/backups/
 backend/data/store.json.tmp
+
+# Electron
+electron/src/firebase/serviceAccount.json
+*.db
+*.db-journal
+*.db-wal
+
+# Firebase
+.firebase/
+firebase-debug.log
