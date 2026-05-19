@@ -19,14 +19,14 @@
     {
       "id": "1",
       "username": "admin",
-      "name": "ANTONYSAMY.A",
+      "name": "ADMIN",
       "role": "admin",
       "pin": "1974"
     },
     {
       "id": "2",
       "username": "operator",
-      "name": "RAMESHKUMAR.A",
+      "name": "SUPERVISOR",
       "role": "operator",
       "pin": "1745"
     }
