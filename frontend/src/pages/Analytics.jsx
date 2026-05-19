@@ -25,9 +25,16 @@ export default function Analytics() {
   const [monthlySummary, setMonthlySummary] = useState([]);
   const [dataLoaded, setDataLoaded] = useState(false);
 
-  // Load last 30 days of data on mount
+  // Load last 30 days of data on mount AND when returning to page
   useEffect(() => {
     loadAnalyticsData();
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        loadAnalyticsData();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, []);
 
   const loadAnalyticsData = async () => {

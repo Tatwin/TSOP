@@ -458,26 +458,34 @@ router.post('/daily', authMiddleware, (req, res) => {
 
     ws['!ref'] = XLSX.utils.encode_range(range);
 
-    // Column widths
-    ws['!cols'] = [
-      { wch: 7 },   // A - S.NO
-      { wch: 10 },  // B - CODE NO
-      { wch: 26 },  // C - PARTICULAR
-      { wch: 7 },   // D - CASE
-      { wch: 8 },   // E - BOTTLE
-      { wch: 8 },   // F - OP.ST
-      { wch: 10 },  // G - PURCHASE
-      { wch: 10 },  // H - ST.RETURN
-      { wch: 8 },   // I - TOTAL
-      { wch: 8 },   // J - CL.ST
-      { wch: 8 },   // K - SALES
-      { wch: 8 },   // L - RATE
-      { wch: 12 },  // M - SALES AMT
-      { wch: 12 },  // N - CL.VALUE
-      { wch: 12 },  // O - OP VALUE
-      { wch: 12 },  // P - PUR VALUE
-      { wch: 12 }   // Q - ST.RET VALUE
-    ];
+    // Auto-fit column widths based on content
+    const colWidths = [];
+    wsData.forEach((row) => {
+      if (!row) return;
+      row.forEach((cellObj, c) => {
+        if (!colWidths[c]) colWidths[c] = 4; // minimum width
+        let len = 4;
+        if (cellObj && typeof cellObj === 'object' && cellObj.v !== undefined) {
+          len = String(cellObj.v).length;
+        } else if (cellObj !== undefined && cellObj !== null) {
+          len = String(cellObj).length;
+        }
+        // Add some padding, cap at reasonable max
+        len = Math.min(len + 2, 35);
+        if (len > colWidths[c]) colWidths[c] = len;
+      });
+    });
+    ws['!cols'] = colWidths.map(w => ({ wch: Math.max(w, 6) }));
+
+    // Add autofilter on the column headers row (row index 6 = row 7 in Excel)
+    // This enables dropdown filters on TOTAL, PURCHASE, CL.ST, SALES etc.
+    const headerRowIdx = 6; // 0-indexed row where column headers are
+    ws['!autofilter'] = {
+      ref: XLSX.utils.encode_range({
+        s: { r: headerRowIdx, c: 0 },
+        e: { r: range.e.r, c: 16 }
+      })
+    };
 
     // Merge cells for title row
     ws['!merges'] = [

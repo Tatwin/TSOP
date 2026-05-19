@@ -4,21 +4,26 @@ const { authMiddleware } = require('../middleware/auth');
 const { CATEGORIES } = require('../data/products');
 const fileStore = require('../config/fileStore');
 
-// GET /api/daily-entry/:date - Get entries for a specific date (NO AUTH - view is free)
-router.get('/:date', (req, res) => {
-  const { date } = req.params;
-  const data = fileStore.getDailyEntry(date);
+// IMPORTANT: Static/specific routes MUST come before parameterized /:date routes
 
-  res.json({
-    date,
-    entries: data?.entries || [],
-    metadata: data?.metadata || {},
-    invoices: data?.invoices || [],
-    posAmount: data?.posAmount || 0,
-    deviceValues: data?.deviceValues || {},
-    staff: data?.staff || { salesmen: [], supervisors: [] },
-    purchases: data?.purchases || {}
-  });
+// GET /api/daily-entry/range/:startDate/:endDate - Get entries for date range (NO AUTH)
+router.get('/range/:startDate/:endDate', (req, res) => {
+  const { startDate, endDate } = req.params;
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const results = {};
+
+  const current = new Date(start);
+  while (current <= end) {
+    const dateStr = current.toISOString().split('T')[0];
+    const data = fileStore.getDailyEntry(dateStr);
+    if (data) {
+      results[dateStr] = data;
+    }
+    current.setDate(current.getDate() + 1);
+  }
+
+  res.json({ startDate, endDate, data: results });
 });
 
 // GET /api/daily-entry/:date/opening-stock - Get opening stock (NO AUTH)
@@ -54,24 +59,21 @@ router.get('/:date/opening-stock', (req, res) => {
   res.json({ date, openingStock, purchases: data?.purchases || {} });
 });
 
-// GET /api/daily-entry/range/:startDate/:endDate - Get entries for range (NO AUTH)
-router.get('/range/:startDate/:endDate', (req, res) => {
-  const { startDate, endDate } = req.params;
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  const results = {};
+// GET /api/daily-entry/:date - Get entries for a specific date (NO AUTH - view is free)
+router.get('/:date', (req, res) => {
+  const { date } = req.params;
+  const data = fileStore.getDailyEntry(date);
 
-  const current = new Date(start);
-  while (current <= end) {
-    const dateStr = current.toISOString().split('T')[0];
-    const data = fileStore.getDailyEntry(dateStr);
-    if (data) {
-      results[dateStr] = data;
-    }
-    current.setDate(current.getDate() + 1);
-  }
-
-  res.json({ startDate, endDate, data: results });
+  res.json({
+    date,
+    entries: data?.entries || [],
+    metadata: data?.metadata || {},
+    invoices: data?.invoices || [],
+    posAmount: data?.posAmount || 0,
+    deviceValues: data?.deviceValues || {},
+    staff: data?.staff || { salesmen: [], supervisors: [] },
+    purchases: data?.purchases || {}
+  });
 });
 
 // POST /api/daily-entry/:date - Save entries (AUTH REQUIRED)

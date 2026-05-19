@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { CATEGORIES, DEFAULT_PRODUCTS, CATEGORY_ORDER } from '../data/products';
 import api from '../utils/api';
 import { getEffectiveDate } from '../utils/dateHelper';
@@ -21,6 +21,20 @@ export default function Dashboard() {
   const [stockData, setStockData] = useState(null);
   const [stockLoading, setStockLoading] = useState(false);
   const [stockSearch, setStockSearch] = useState('');
+
+  // Auto-load today's data on mount AND when page becomes visible (returning from DailyEntry)
+  useEffect(() => {
+    loadToday();
+    loadMonthly();
+    // Re-fetch when user returns to this tab/page
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        loadToday();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, []);
 
   const loadToday = async () => {
     setLoading(true);
@@ -107,10 +121,14 @@ export default function Dashboard() {
           </button>
         </div>
         <div className="card-body">
-          {!todayData ? (
+          {!todayData && loading ? (
             <div className="text-center" style={{ padding: 40 }}>
-              <p className="text-muted mb-16">Click refresh to load today's data</p>
-              <button className="btn-primary" onClick={loadToday}>Load Today's Data</button>
+              <p className="text-muted">Loading today's data...</p>
+            </div>
+          ) : !todayData ? (
+            <div className="text-center" style={{ padding: 40 }}>
+              <p className="text-muted mb-16">No data saved for today yet</p>
+              <button className="btn-primary" onClick={loadToday}>Retry</button>
             </div>
           ) : (
             <div className="grid-4">
@@ -207,8 +225,10 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="card-body">
-          {!monthlyData ? (
-            <p className="text-muted text-center" style={{ padding: 20 }}>Select a month and click Load</p>
+          {!monthlyData && loading ? (
+            <p className="text-muted text-center" style={{ padding: 20 }}>Loading monthly data...</p>
+          ) : !monthlyData ? (
+            <p className="text-muted text-center" style={{ padding: 20 }}>No data for this month</p>
           ) : Object.keys(monthlyData.data || {}).length === 0 ? (
             <p className="text-muted text-center" style={{ padding: 20 }}>No data for this month</p>
           ) : (
