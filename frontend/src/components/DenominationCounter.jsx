@@ -6,8 +6,13 @@ function formatINR(num) {
   return new Intl.NumberFormat('en-IN').format(num);
 }
 
-export default function DenominationCounter({ denomination, setDenomination, totalCash, totalSales }) {
-  const cashMatch = Math.abs(totalCash - totalSales) < 1;
+export default function DenominationCounter({ denomination, setDenomination, totalCash, totalSales, posAmount, setPosAmount }) {
+  // NEW validation: Cash + POS = Grand Total Sales
+  const cashPlusPOS = totalCash + (posAmount || 0);
+  const cashMatch = Math.abs(cashPlusPOS - totalSales) < 1;
+
+  // Remittance = Grand Total Sales - POS Amount
+  const remittance = totalSales - (posAmount || 0);
 
   const updateNote = (note, count) => {
     setDenomination(prev => ({
@@ -67,7 +72,72 @@ export default function DenominationCounter({ denomination, setDenomination, tot
         </div>
       </div>
 
-      {/* Total */}
+      {/* POS (Card/GPay) Field */}
+      <div style={{
+        marginTop: '16px',
+        padding: '16px',
+        background: '#e3f2fd',
+        borderRadius: '12px',
+        border: '2px solid #1565c0'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+          <div>
+            <label style={{ fontWeight: '700', fontSize: '1rem', color: '#1565c0', display: 'block', marginBottom: '4px' }}>
+              💳 POS (Card/GPay)
+            </label>
+            <p style={{ fontSize: '0.75rem', color: '#757575', margin: 0 }}>
+              Money already deposited via card/digital payments
+            </p>
+          </div>
+          <input
+            type="number"
+            min="0"
+            value={posAmount || ''}
+            onChange={(e) => setPosAmount(Number(e.target.value) || 0)}
+            placeholder="₹ 0"
+            style={{ 
+              width: '160px', 
+              padding: '12px', 
+              textAlign: 'center', 
+              fontSize: '1.3rem', 
+              fontWeight: '700',
+              border: '2px solid #1565c0',
+              borderRadius: '8px'
+            }}
+          />
+          <span style={{ fontWeight: '700', fontSize: '1.2rem', color: '#1565c0' }}>
+            ₹{formatINR(posAmount || 0)}
+          </span>
+        </div>
+      </div>
+
+      {/* Remittance Display */}
+      <div style={{
+        marginTop: '16px',
+        padding: '16px',
+        background: '#fff3e0',
+        borderRadius: '12px',
+        border: '2px solid #e65100',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '12px'
+      }}>
+        <div>
+          <div style={{ fontSize: '0.85rem', color: '#e65100', fontWeight: '600' }}>
+            🏦 REMITTANCE (Cash to Bank)
+          </div>
+          <div style={{ fontSize: '0.75rem', color: '#757575', marginTop: '2px' }}>
+            Grand Total Sales - POS Amount
+          </div>
+        </div>
+        <div style={{ fontSize: '2rem', fontWeight: '700', color: '#e65100' }}>
+          ₹{formatINR(remittance)}
+        </div>
+      </div>
+
+      {/* Total - NEW: Cash + POS = Grand Total Sales */}
       <div style={{ 
         marginTop: '16px', 
         padding: '16px', 
@@ -81,9 +151,12 @@ export default function DenominationCounter({ denomination, setDenomination, tot
         gap: '12px'
       }}>
         <div>
-          <div style={{ fontSize: '0.85rem', color: '#757575' }}>Total Cash Collected</div>
+          <div style={{ fontSize: '0.85rem', color: '#757575' }}>Cash + POS</div>
           <div style={{ fontSize: '1.5rem', fontWeight: '700', color: cashMatch ? '#2e7d32' : '#c62828' }}>
-            ₹{formatINR(totalCash)}
+            ₹{formatINR(cashPlusPOS)}
+          </div>
+          <div style={{ fontSize: '0.7rem', color: '#757575' }}>
+            (Cash: ₹{formatINR(totalCash)} + POS: ₹{formatINR(posAmount || 0)})
           </div>
         </div>
         <div style={{ textAlign: 'center' }}>
@@ -93,17 +166,17 @@ export default function DenominationCounter({ denomination, setDenomination, tot
           </div>
         </div>
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: '0.85rem', color: '#757575' }}>Total Sales Amount</div>
+          <div style={{ fontSize: '0.85rem', color: '#757575' }}>Grand Total Sales</div>
           <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#1a237e' }}>
             ₹{formatINR(totalSales)}
           </div>
         </div>
       </div>
 
-      {!cashMatch && totalCash > 0 && (
+      {!cashMatch && cashPlusPOS > 0 && (
         <div style={{ marginTop: '12px', padding: '12px', background: '#fff3e0', borderRadius: '8px', fontSize: '0.9rem' }}>
-          <strong>Difference:</strong> ₹{formatINR(Math.abs(totalCash - totalSales))} 
-          ({totalCash > totalSales ? 'Cash is MORE than sales' : 'Cash is LESS than sales'})
+          <strong>Difference:</strong> ₹{formatINR(Math.abs(cashPlusPOS - totalSales))} 
+          ({cashPlusPOS > totalSales ? 'Cash+POS is MORE than sales' : 'Cash+POS is LESS than sales'})
         </div>
       )}
     </div>

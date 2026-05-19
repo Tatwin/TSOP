@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 export default function Layout({ children }) {
-  const { user, logout } = useAuth();
+  const { user, logout, authenticated } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -54,23 +54,43 @@ export default function Layout({ children }) {
             >
               Dashboard
             </button>
-            <span style={{ fontSize: '0.8rem', opacity: 0.8, marginLeft: '8px' }}>
-              {user?.name}
-            </span>
-            <button
-              onClick={logout}
-              style={{
-                padding: '6px 12px',
-                borderRadius: '6px',
-                border: '1px solid rgba(255,255,255,0.3)',
-                background: 'transparent',
-                color: 'white',
-                fontSize: '0.8rem',
-                cursor: 'pointer'
-              }}
-            >
-              Logout
-            </button>
+            {authenticated ? (
+              <>
+                <span style={{ fontSize: '0.8rem', opacity: 0.8, marginLeft: '8px' }}>
+                  {user?.name || 'Admin'}
+                </span>
+                <button
+                  onClick={logout}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    border: '1px solid rgba(255,255,255,0.3)',
+                    background: 'transparent',
+                    color: 'white',
+                    fontSize: '0.8rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Logout
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => navigate('/login')}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(255,255,255,0.5)',
+                  background: 'rgba(255,255,255,0.15)',
+                  color: 'white',
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                  fontWeight: '600'
+                }}
+              >
+                🔑 Enter PIN
+              </button>
+            )}
           </nav>
         </div>
       </header>
