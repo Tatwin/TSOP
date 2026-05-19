@@ -776,4 +776,16 @@ const DEFAULT_PRODUCTS = [
   p('3287','SPECIAL TRIPLE STRONG','BEER_500ML_CAN'),
 ];
 
+// Apply rates from rates data
+const { PRODUCT_RATES } = require('./rates');
+const catIdx = {};
+DEFAULT_PRODUCTS.forEach(prod => {
+  if (!catIdx[prod.category]) catIdx[prod.category] = 0;
+  const rates = PRODUCT_RATES[prod.category];
+  if (rates && catIdx[prod.category] < rates.length) {
+    prod.rate = rates[catIdx[prod.category]] || 0;
+  }
+  catIdx[prod.category]++;
+});
+
 module.exports = { CATEGORIES, DEFAULT_PRODUCTS };
