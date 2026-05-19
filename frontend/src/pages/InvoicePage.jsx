@@ -74,9 +74,19 @@ export default function InvoicePage() {
   // Add new invoice
   const handleAddInvoice = () => {
     if (!newInvoice.invoiceNo || !newInvoice.invoiceAmount) return;
+    const newIdx = invoices.length;
     setInvoices([...invoices, { ...newInvoice, invoiceAmount: Number(newInvoice.invoiceAmount), items: [] }]);
     setNewInvoice({ invoiceNo: '', invoiceDate: formatDate(new Date()), invoiceAmount: 0 });
     setShowAddInvoice(false);
+    // Auto-open purchase dialog for the new invoice
+    setActiveInvoiceIdx(newIdx);
+    setShowPurchaseDialog(true);
+    setCodeInput('');
+    setFoundProduct(null);
+    setPurchaseQty('');
+    setNotFound(false);
+    setShowNewProduct(false);
+    setTimeout(() => codeInputRef.current?.focus(), 150);
   };
 
 
