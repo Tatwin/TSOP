@@ -1,3 +1,4 @@
+import { PRODUCT_RATES } from './rates.js';
 /**
  * TASMAC Shop No. 1745 - Complete Product Catalog (Frontend)
  * All products organized by category with CODE NO, name, category, and case size
@@ -776,16 +777,16 @@ export const DEFAULT_PRODUCTS = [
   p('3287','SPECIAL TRIPLE STRONG','BEER_500ML_CAN'),
 ];
 
-// Apply rates
-import { PRODUCT_RATES } from './rates.js';
-const catIdx = {};
+
+// Apply rates from rates data
+const catIdx2 = {};
 DEFAULT_PRODUCTS.forEach(prod => {
-  if (!catIdx[prod.category]) catIdx[prod.category] = 0;
+  if (!catIdx2[prod.category]) catIdx2[prod.category] = 0;
   const rates = PRODUCT_RATES[prod.category];
-  if (rates && catIdx[prod.category] < rates.length) {
-    prod.rate = rates[catIdx[prod.category]] || 0;
+  if (rates && catIdx2[prod.category] < rates.length) {
+    prod.rate = rates[catIdx2[prod.category]] || 0;
   }
-  catIdx[prod.category]++;
+  catIdx2[prod.category]++;
 });
 
 export const CATEGORY_ORDER = [
