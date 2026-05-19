@@ -10,15 +10,22 @@ const dailyData = {};
 router.get('/:date', (req, res) => {
   const { date } = req.params;
   const data = dailyData[date];
+
+  // If entries exist, apply any saved purchases that haven't been applied yet
+  let entries = data?.entries || [];
+  if (entries.length === 0 && data?.purchases) {
+    // No entries yet but purchases were saved - return purchases info
+  }
   
   res.json({
     date,
-    entries: data?.entries || [],
+    entries,
     metadata: data?.metadata || {},
     invoices: data?.invoices || [],
     posAmount: data?.posAmount || 0,
     deviceValues: data?.deviceValues || {},
-    staff: data?.staff || { salesmen: [], supervisors: [] }
+    staff: data?.staff || { salesmen: [], supervisors: [] },
+    purchases: data?.purchases || {}
   });
 });
 
@@ -29,7 +36,7 @@ router.get('/:date/opening-stock', (req, res) => {
   
   // First check if this date has manually saved opening stock
   if (dailyData[date]?.openingStock) {
-    return res.json({ date, openingStock: dailyData[date].openingStock });
+    return res.json({ date, openingStock: dailyData[date].openingStock, purchases: dailyData[date]?.purchases || {} });
   }
 
   // Look backwards for the most recent day with data
@@ -50,10 +57,10 @@ router.get('/:date/opening-stock', (req, res) => {
     }
   }
   
-  res.json({ date, openingStock });
+  res.json({ date, openingStock, purchases: dailyData[date]?.purchases || {} });
 });
 
-// GET /api/daily-entry/range/:startDate/:endDate - Get entries for range (NO AUTH)
+// GET /api/daily-entry/range/:startDate/:endDate - Get entries for range (NO AUTH)});/:startDate/:endDate - Get entries for range (NO AUTH)
 router.get('/range/:startDate/:endDate', (req, res) => {
   const { startDate, endDate } = req.params;
   const start = new Date(startDate);
@@ -131,17 +138,24 @@ router.post('/:date/purchases', authMiddleware, (req, res) => {
     dailyData[date] = { entries: [], metadata: {} };
   }
 
+  // Always save invoices
   dailyData[date].invoices = invoices || [];
 
+  // Always save purchases map (so it can be applied later when entries are created)
+  if (purchases) {
+    dailyData[date].purchases = purchases;
+  }
+
+  // Apply purchases to entries if entries exist
   if (purchases && dailyData[date].entries?.length > 0) {
     dailyData[date].entries = dailyData[date].entries.map(entry => ({
       ...entry,
-      purchase: purchases[entry.productId] || entry.purchase || 0
+      purchase: (purchases[entry.productId] || 0) + (entry.purchase || 0)
     }));
   }
 
   dailyData[date].updatedAt = new Date().toISOString();
-  res.json({ success: true, date, message: 'Purchases saved successfully' });
+  res.json({ success: true, date, message: 'Purchases saved successfully', invoiceCount: (invoices || []).length });
 });
 
 // PUT /api/daily-entry/:date/metadata - Update metadata (AUTH REQUIRED)
