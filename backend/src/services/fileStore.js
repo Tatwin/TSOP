@@ -20,7 +20,7 @@ const DEFAULT_STORE = {
     supervisors: ['ANTONYSAMY.A', 'SARAVAN']
   },
   users: [
-    { id: '1', username: 'admin', name: 'ANTONYSAMY.A', role: 'admin', pin: '1745' }
+    { id: '1', username: 'admin', name: 'ANTONYSAMY.A', role: 'admin', pin: '197' }
   ],
   auditLogs: [],       // Array of audit entries
   settings: {
