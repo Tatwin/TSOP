@@ -2,42 +2,37 @@ const express = require('express');
 const router = express.Router();
 const { generateToken, authMiddleware } = require('../middleware/auth');
 
-// Default admin credentials (should be changed in production)
-const DEFAULT_USERS = [
-  {
-    id: '1',
-    username: 'antonysamy',
-    password: 'tasmac1745', // In production, use bcrypt
-    name: 'ANTONYSAMY.A',
-    role: 'admin'
-  }
-];
+// PIN-based authentication (PIN: 1745)
+const VALID_PIN = '1745';
 
-// POST /api/auth/login
+const DEFAULT_USER = {
+  id: '1',
+  username: 'admin',
+  name: 'ANTONYSAMY.A',
+  role: 'admin'
+};
+
+// POST /api/auth/login - PIN-based login
 router.post('/login', (req, res) => {
-  const { username, password } = req.body;
+  const { pin } = req.body;
 
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Username and password required' });
+  if (!pin) {
+    return res.status(400).json({ error: 'PIN is required' });
   }
 
-  const user = DEFAULT_USERS.find(
-    u => u.username === username && u.password === password
-  );
-
-  if (!user) {
-    return res.status(401).json({ error: 'Invalid credentials' });
+  if (pin !== VALID_PIN) {
+    return res.status(401).json({ error: 'Invalid PIN' });
   }
 
-  const token = generateToken(user);
+  const token = generateToken(DEFAULT_USER);
   
   res.json({
     token,
     user: {
-      id: user.id,
-      username: user.username,
-      name: user.name,
-      role: user.role
+      id: DEFAULT_USER.id,
+      username: DEFAULT_USER.username,
+      name: DEFAULT_USER.name,
+      role: DEFAULT_USER.role
     }
   });
 });

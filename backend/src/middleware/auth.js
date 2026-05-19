@@ -2,12 +2,12 @@ const jwt = require('jsonwebtoken');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'tasmac-pos-dev-secret-key';
 
-// Simple JWT auth middleware
+// Simple JWT auth middleware - used only for edit/save operations
 function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization;
   
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'No token provided' });
+    return res.status(401).json({ error: 'No token provided. PIN required for this action.' });
   }
 
   const token = authHeader.split(' ')[1];
@@ -17,7 +17,7 @@ function authMiddleware(req, res, next) {
     req.user = decoded;
     next();
   } catch (error) {
-    return res.status(401).json({ error: 'Invalid token' });
+    return res.status(401).json({ error: 'Invalid or expired token. Please re-enter PIN.' });
   }
 }
 

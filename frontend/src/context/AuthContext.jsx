@@ -7,6 +7,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('tasmac_token'));
   const [loading, setLoading] = useState(true);
+  const [authenticated, setAuthenticated] = useState(false);
 
   useEffect(() => {
     if (token) {
@@ -15,9 +16,11 @@ export function AuthProvider({ children }) {
       api.get('/auth/me')
         .then(res => {
           setUser(res.data.user);
+          setAuthenticated(true);
           setLoading(false);
         })
         .catch(() => {
+          // Token expired or invalid - clear it but allow viewing
           logout();
           setLoading(false);
         });
@@ -26,13 +29,14 @@ export function AuthProvider({ children }) {
     }
   }, [token]);
 
-  const login = async (username, password) => {
-    const res = await api.post('/auth/login', { username, password });
+  const login = async (pin) => {
+    const res = await api.post('/auth/login', { pin });
     const { token: newToken, user: userData } = res.data;
     localStorage.setItem('tasmac_token', newToken);
     api.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
     setToken(newToken);
     setUser(userData);
+    setAuthenticated(true);
     return userData;
   };
 
@@ -41,10 +45,11 @@ export function AuthProvider({ children }) {
     delete api.defaults.headers.common['Authorization'];
     setToken(null);
     setUser(null);
+    setAuthenticated(false);
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, token, login, logout, loading, authenticated }}>
       {children}
     </AuthContext.Provider>
   );
