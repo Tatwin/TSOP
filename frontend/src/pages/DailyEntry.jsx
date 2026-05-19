@@ -184,6 +184,8 @@ export default function DailyEntry() {
         coins: denomination.coins
       });
       setSaveMsg('Saved successfully!');
+      // Notify other pages that data was saved
+      window.dispatchEvent(new CustomEvent('dailyEntrySaved', { detail: { date: selectedDate } }));
     } catch { setSaveMsg('Save failed'); }
     finally { setSaving(false); setTimeout(() => setSaveMsg(''), 3000); }
   };
@@ -378,6 +380,7 @@ export default function DailyEntry() {
 
 
       {/* === Staff Selection === */}
+      {mode === 'sequential' && entryComplete && (
       <div className="card">
         <div className="card-header">
           <h3>Staff on Duty</h3>
@@ -441,6 +444,7 @@ export default function DailyEntry() {
           </div>
         </div>
       </div>
+      )}
 
 
       {/* === 2. Stats Bar === */}
@@ -753,8 +757,8 @@ export default function DailyEntry() {
         <CaseAbstract entries={entries} calcEntry={calcEntry} />
       )}
 
-      {/* === 4. POS Amount (shown after entry complete or always in non-sequential modes) === */}
-      {(mode !== 'sequential' || entryComplete) && (
+      {/* === 4. POS Amount === */}
+      {(mode === 'sequential' && entryComplete) && (
         <div className="card" style={{ border: '2px solid var(--primary)' }}>
           <div className="card-header">
             <h3>POS / Digital Payment Amount</h3>
@@ -777,8 +781,8 @@ export default function DailyEntry() {
       )}
 
 
-      {/* === 5. Device vs Manual Comparison (always visible after entry or in non-sequential) === */}
-      {(mode !== 'sequential' || entryComplete) && (
+      {/* === 5. Device vs Manual Comparison === */}
+      {(mode === 'sequential' && entryComplete) && (
         <div className="card">
           <div className="card-header">
             <h3>Device vs Manual Comparison</h3>
@@ -840,7 +844,7 @@ export default function DailyEntry() {
 
 
       {/* === 6. Denomination Counter === */}
-      {(mode !== 'sequential' || entryComplete) && (
+      {(mode === 'sequential' && entryComplete) && (
         <DenominationCounter
           denomination={denomination} setDenomination={setDenomination}
           totalCash={totalCash} totalSales={totals.totalSales}
@@ -849,7 +853,7 @@ export default function DailyEntry() {
       )}
 
       {/* === 7. Validation Status === */}
-      {(mode !== 'sequential' || entryComplete) && (
+      {(mode === 'sequential' && entryComplete) && (
         <div className={cashMatch && totals.totalSales > 0 ? 'status-match' : totals.totalSales > 0 ? 'status-mismatch' : 'card'} style={{ marginBottom: 20 }}>
           {totals.totalSales > 0 ? (
             cashMatch
@@ -861,35 +865,45 @@ export default function DailyEntry() {
         </div>
       )}
 
-      {/* === 8. Export Button === */}
-      {(mode !== 'sequential' || entryComplete) && (
+      {/* === 8. Download Excel Sheet === */}
+      {(mode === 'sequential' && entryComplete) && (
         <div className="card">
           <div className="card-body" style={{ padding: '16px 24px' }}>
             <div className="flex-between">
               <div>
-                <h3 style={{ fontSize: '0.95rem', marginBottom: 4 }}>Export to Excel</h3>
+                <h3 style={{ fontSize: '0.95rem', marginBottom: 4 }}>Download Excel Sheet</h3>
                 <p className="text-xs text-muted">
-                  {cashMatch && totals.totalSales > 0
-                    ? 'Validation passed. Ready to export.'
-                    : totals.totalSales > 0
-                      ? 'Validation has mismatches. You can still export with confirmation.'
-                      : 'Enter sales data first.'}
+                  {cashMatch && allDeviceMatched && totals.totalSales > 0
+                    ? 'All validations passed. Ready to download.'
+                    : !cashMatch && !allDeviceMatched && totals.totalSales > 0
+                      ? 'Cash mismatch AND device mismatch. Fix before downloading.'
+                      : !cashMatch && totals.totalSales > 0
+                        ? 'Cash + POS does not match sales. Fix denomination or POS amount.'
+                        : !allDeviceMatched && totals.totalSales > 0
+                          ? 'Device vs Manual mismatch. Verify device readings.'
+                          : 'Enter sales data first.'}
                 </p>
               </div>
               <button
-                className={`btn-warning ${!cashMatch && totals.totalSales > 0 ? 'btn-disabled-style' : ''}`}
+                className="btn-warning"
                 onClick={() => {
-                  if (!cashMatch && totals.totalSales > 0) {
-                    if (window.confirm('Cash + POS does not match sales total. Export anyway?')) {
-                      handleExport();
-                    }
-                  } else {
-                    handleExport();
+                  if (totals.totalSales === 0) return;
+                  if (!cashMatch && !allDeviceMatched) {
+                    alert('Cannot download: Both Cash+POS and Device vs Manual have mismatches. Please fix before exporting.');
+                    return;
                   }
+                  if (!cashMatch) {
+                    if (!window.confirm('Warning: Cash + POS does not match Total Sales.\n\nCash+POS: \u20B9' + formatINR(cashPlusPOS) + '\nTotal Sales: \u20B9' + formatINR(totals.totalSales) + '\n\nDownload anyway?')) return;
+                  }
+                  if (!allDeviceMatched) {
+                    if (!window.confirm('Warning: Device readings do not match manual calculations.\n\nPlease verify device values.\n\nDownload anyway?')) return;
+                  }
+                  handleExport();
                 }}
                 disabled={totals.totalSales === 0}
+                style={{ opacity: totals.totalSales === 0 ? 0.5 : 1 }}
               >
-                Export Excel
+                Download Excel Sheet
               </button>
             </div>
           </div>

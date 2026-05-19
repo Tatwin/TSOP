@@ -6,13 +6,16 @@ function formatINR(num) {
   return new Intl.NumberFormat('en-IN').format(num || 0);
 }
 
-// Helper: get effective today (yesterday if midnight-4AM)
+// Helper: get effective today using LOCAL time (yesterday if midnight-4AM)
 function getEffectiveToday() {
   const now = new Date();
   if (now.getHours() >= 0 && now.getHours() < 4) {
     now.setDate(now.getDate() - 1);
   }
-  return now.toISOString().split('T')[0];
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 export default function Analytics() {
@@ -33,8 +36,13 @@ export default function Analytics() {
         loadAnalyticsData();
       }
     };
+    const handleSaved = () => loadAnalyticsData();
     document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('dailyEntrySaved', handleSaved);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('dailyEntrySaved', handleSaved);
+    };
   }, []);
 
   const loadAnalyticsData = async () => {

@@ -4,14 +4,17 @@ const { authMiddleware } = require('../middleware/auth');
 const { CATEGORIES } = require('../data/products');
 const fileStore = require('../config/fileStore');
 
-// Helper: get effective today (yesterday if 12AM-4AM)
+// Helper: get effective today using LOCAL timezone (yesterday if 12AM-4AM)
 function getEffectiveToday() {
   const now = new Date();
   const hour = now.getHours();
   if (hour >= 0 && hour < 4) {
     now.setDate(now.getDate() - 1);
   }
-  return now.toISOString().split('T')[0];
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 // GET /api/dashboard/today - Today's summary (NO AUTH)

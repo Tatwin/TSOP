@@ -26,14 +26,18 @@ export default function Dashboard() {
   useEffect(() => {
     loadToday();
     loadMonthly();
-    // Re-fetch when user returns to this tab/page
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
         loadToday();
       }
     };
+    const handleSaved = () => { loadToday(); loadMonthly(); };
     document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('dailyEntrySaved', handleSaved);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('dailyEntrySaved', handleSaved);
+    };
   }, []);
 
   const loadToday = async () => {
@@ -50,11 +54,44 @@ export default function Dashboard() {
         totalPurchase += e.purchaseValue || 0;
         totalClValue += e.clValue || 0;
       });
-      setTodayData({
-        date: today, totalSales, totalPurchase, totalClValue,
-        totalCash: denomRes.data.denomination?.totalCash || 0,
-        entriesCount: entryRes.data.entries?.length || 0
-      });
+
+      // If today has data, show it. Otherwise try to find the last saved date
+      if (entryRes.data.entries?.length > 0) {
+        setTodayData({
+          date: today, totalSales, totalPurchase, totalClValue,
+          totalCash: denomRes.data.denomination?.totalCash || 0,
+          entriesCount: entryRes.data.entries?.length || 0
+        });
+      } else {
+        // Check last 7 days for most recent saved data
+        let found = false;
+        for (let i = 1; i <= 7; i++) {
+          const d = new Date();
+          d.setDate(d.getDate() - i);
+          const checkDate = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+          try {
+            const [prevEntry, prevDenom] = await Promise.all([
+              api.get(`/daily-entry/${checkDate}`),
+              api.get(`/denomination/${checkDate}`)
+            ]);
+            if (prevEntry.data.entries?.length > 0) {
+              let ls = 0, lp = 0, lc = 0;
+              prevEntry.data.entries.forEach(e => { ls += e.salesAmt || 0; lp += e.purchaseValue || 0; lc += e.clValue || 0; });
+              setTodayData({
+                date: checkDate, totalSales: ls, totalPurchase: lp, totalClValue: lc,
+                totalCash: prevDenom.data.denomination?.totalCash || 0,
+                entriesCount: prevEntry.data.entries.length,
+                isLastSaved: true
+              });
+              found = true;
+              break;
+            }
+          } catch { /* skip */ }
+        }
+        if (!found) {
+          setTodayData({ date: today, totalSales: 0, totalPurchase: 0, totalClValue: 0, totalCash: 0, entriesCount: 0 });
+        }
+      }
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };
@@ -115,7 +152,10 @@ export default function Dashboard() {
       {/* Today Summary */}
       <div className="card">
         <div className="card-header">
-          <h3>Today's Summary</h3>
+          <div>
+            <h3>Today's Summary</h3>
+            {todayData && <p className="text-xs text-muted" style={{ marginTop: 2 }}>Date: {todayData.date} {todayData.isLastSaved ? '(last saved entry)' : todayData.entriesCount > 0 ? `(${todayData.entriesCount} products)` : '(no entries yet)'}</p>}
+          </div>
           <button className="btn-primary btn-sm" onClick={loadToday} disabled={loading}>
             {loading ? 'Loading...' : 'Refresh'}
           </button>

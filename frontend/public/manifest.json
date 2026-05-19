@@ -1,11 +1,11 @@
 {
-  "name": "TASMAC POS - Shop No. 1745",
-  "short_name": "TASMAC POS",
+  "name": "1745 POS - TASMAC Alandurai",
+  "short_name": "1745 POS",
   "description": "Point of Sale System for TASMAC Shop No. 1745, Alandurai, Coimbatore",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#1e1e2d",
-  "theme_color": "#3699ff",
+  "background_color": "#1E291E",
+  "theme_color": "#0E6633",
   "orientation": "any",
   "icons": [
     {
