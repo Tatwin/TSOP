@@ -4,6 +4,8 @@ import { AuthProvider } from './context/AuthContext';
 import Login from './pages/Login';
 import DailyEntry from './pages/DailyEntry';
 import Dashboard from './pages/Dashboard';
+import ManageProducts from './pages/ManageProducts';
+import Analytics from './pages/Analytics';
 import Layout from './components/Layout';
 
 function App() {
@@ -20,6 +22,16 @@ function App() {
           <Route path="/dashboard" element={
             <Layout>
               <Dashboard />
+            </Layout>
+          } />
+          <Route path="/manage-products" element={
+            <Layout>
+              <ManageProducts />
+            </Layout>
+          } />
+          <Route path="/analytics" element={
+            <Layout>
+              <Analytics />
             </Layout>
           } />
           <Route path="*" element={<Navigate to="/" replace />} />

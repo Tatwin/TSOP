@@ -15,7 +15,10 @@ router.get('/:date', authMiddleware, (req, res) => {
   res.json({
     date,
     entries: data?.entries || [],
-    metadata: data?.metadata || {}
+    metadata: data?.metadata || {},
+    invoices: data?.invoices || [],
+    posAmount: data?.posAmount || 0,
+    deviceValues: data?.deviceValues || {}
   });
 });
 
@@ -49,7 +52,7 @@ router.get('/:date/opening-stock', authMiddleware, (req, res) => {
 // POST /api/daily-entry/:date - Save entries for a specific date
 router.post('/:date', authMiddleware, (req, res) => {
   const { date } = req.params;
-  const { entries, metadata } = req.body;
+  const { entries, metadata, invoices, posAmount, deviceValues } = req.body;
 
   if (!entries || !Array.isArray(entries)) {
     return res.status(400).json({ error: 'Entries array required' });
@@ -58,6 +61,9 @@ router.post('/:date', authMiddleware, (req, res) => {
   dailyData[date] = {
     entries,
     metadata: metadata || {},
+    invoices: invoices || [],
+    posAmount: posAmount || 0,
+    deviceValues: deviceValues || {},
     updatedAt: new Date().toISOString(),
     updatedBy: req.user.username
   };
