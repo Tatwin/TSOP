@@ -27,7 +27,7 @@ export default function DailyEntry() {
 
 
   // UI state
-  const [mode, setMode] = useState('sequential'); // 'sequential' | 'table' | 'summary' | 'openingStock'
+  const [mode, setMode] = useState('sequential'); // 'sequential' | 'table' | 'summary' | 'openingStock' | 'stockReturn'
   const [currentIndex, setCurrentIndex] = useState(0);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState('');
@@ -42,10 +42,15 @@ export default function DailyEntry() {
   const [osNotFound, setOsNotFound] = useState(false);
   const [osEnteredList, setOsEnteredList] = useState([]);
 
+  // Stock Return state
+  const [stockReturnFilter, setStockReturnFilter] = useState('');
+  const [savingSR, setSavingSR] = useState(false);
+
   // Refs for auto-focus
   const caseInputRef = useRef(null);
   const bottleInputRef = useRef(null);
   const osQtyRef = useRef(null);
+
 
   function initEntries() {
     return DEFAULT_PRODUCTS.map(p => ({
@@ -93,6 +98,7 @@ export default function DailyEntry() {
     };
   }, []);
 
+
   // Totals
   const totals = useMemo(() => {
     let totalSales = 0, totalPurchaseValue = 0, totalClValue = 0;
@@ -128,6 +134,7 @@ export default function DailyEntry() {
     closingValue: (deviceValues.closingValue||0) - manualValues.closingValue
   };
   const allDeviceMatched = Object.values(deviceDiff).every(d => Math.abs(d) < 1);
+
 
   // Load data
   const loadData = async () => {
@@ -170,6 +177,7 @@ export default function DailyEntry() {
       setDataLoaded(true);
     }
   };
+
 
 
   // Save
@@ -224,6 +232,31 @@ export default function DailyEntry() {
   };
 
 
+
+  // Save Stock Returns
+  const handleSaveStockReturn = async () => {
+    if (!authenticated) { navigate('/login'); return; }
+    setSavingSR(true);
+    try {
+      const stockReturnData = {};
+      entries.forEach(e => {
+        if (e.stockReturn > 0) {
+          stockReturnData[e.productId] = e.stockReturn;
+        }
+      });
+      await api.post(`/daily-entry/${selectedDate}/stock-return`, { stockReturn: stockReturnData });
+      setSaveMsg('Stock returns saved successfully');
+    } catch { setSaveMsg('Failed to save stock returns'); }
+    finally { setSavingSR(false); setTimeout(() => setSaveMsg(''), 3000); }
+  };
+
+  // Update stock return for a product
+  const updateStockReturn = (productId, value) => {
+    setEntries(prev => prev.map(e =>
+      e.productId === productId ? { ...e, stockReturn: Number(value) || 0 } : e
+    ));
+  };
+
   // Update opening stock for a product
   const updateOpeningStock = (productId, value) => {
     setEntries(prev => prev.map(e =>
@@ -238,6 +271,7 @@ export default function DailyEntry() {
       e.productId === currentEntry.productId ? { ...e, [field]: Number(value) || 0 } : e
     ));
   };
+
 
   // Handle Enter key in sequential mode — TASK 1 FIX
   const handleKeyDown = (e, field) => {
@@ -277,6 +311,7 @@ export default function DailyEntry() {
       prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]
     );
   };
+
 
   // Opening stock code search handler
   const handleOsCodeSearch = (e) => {
@@ -329,6 +364,7 @@ export default function DailyEntry() {
   };
 
 
+
   return (
     <div>
       {/* === 1. Top Controls: Date + Load + Mode === */}
@@ -348,7 +384,7 @@ export default function DailyEntry() {
 
             <div className="flex gap-8" style={{ alignItems: 'center' }}>
               <div className="flex gap-4" style={{ background: '#F4F6F4', borderRadius: 8, padding: 3 }}>
-                {[{id:'sequential',label:'Daily Sales'},{id:'openingStock',label:'Opening Stock'},{id:'summary',label:'Summary'},{id:'table',label:'Table'}].map(m => (
+                {[{id:'sequential',label:'Daily Sales'},{id:'openingStock',label:'Opening Stock'},{id:'stockReturn',label:'Stock Return'},{id:'summary',label:'Summary'},{id:'table',label:'Table'}].map(m => (
                   <button key={m.id} onClick={() => { setMode(m.id); setEntryComplete(false); }}
                     style={{
                       padding: '6px 14px', borderRadius: 6, fontSize: '0.8rem', fontWeight: 600, border: 'none',
@@ -377,7 +413,9 @@ export default function DailyEntry() {
       </div>
 
 
-      {/* === Staff Selection === */}
+
+      {/* === Staff Selection — ONLY in sequential (Daily Sales) mode === */}
+      {mode === 'sequential' && (
       <div className="card">
         <div className="card-header">
           <h3>Staff on Duty</h3>
@@ -441,6 +479,8 @@ export default function DailyEntry() {
           </div>
         </div>
       </div>
+      )}
+
 
 
       {/* === 2. Stats Bar === */}
@@ -459,12 +499,18 @@ export default function DailyEntry() {
         </div>
         <div className="stat-card danger">
           <div className="stat-label">Products Entered</div>
-          <div className="stat-value">{activeEntries.filter(e => e.cases > 0 || e.bottles > 0).length} / {activeEntries.length}</div>
+          <div className="stat-value">
+            {mode === 'sequential'
+              ? `${currentIndex + (entryComplete ? activeEntries.length : 0)} / ${activeEntries.length}`
+              : `${activeEntries.filter(e => e.cases > 0 || e.bottles > 0).length} / ${activeEntries.length}`
+            }
+          </div>
         </div>
       </div>
 
 
-      {/* === 3. Daily Sales Entry (Sequential / Table / Opening Stock) === */}
+
+      {/* === 3. Daily Sales Entry (Sequential) === */}
       {mode === 'sequential' && (
         <div>
           {activeEntries.length === 0 ? (
@@ -510,7 +556,7 @@ export default function DailyEntry() {
                   </div>
 
 
-                  {/* Input Fields */}
+                  {/* Input Fields — using ?? instead of || to allow 0 */}
                   <div className="entry-grid">
                     <div className="entry-input-group">
                       <label className="form-label">Closing CASE</label>
@@ -519,7 +565,7 @@ export default function DailyEntry() {
                         type="number"
                         min="0"
                         className="input-lg"
-                        value={currentEntry.cases || ''}
+                        value={currentEntry.cases ?? ''}
                         onChange={e => updateCurrentEntry('cases', e.target.value)}
                         onKeyDown={e => handleKeyDown(e, 'cases')}
                         placeholder="0"
@@ -533,7 +579,7 @@ export default function DailyEntry() {
                         type="number"
                         min="0"
                         className="input-lg"
-                        value={currentEntry.bottles || ''}
+                        value={currentEntry.bottles ?? ''}
                         onChange={e => updateCurrentEntry('bottles', e.target.value)}
                         onKeyDown={e => handleKeyDown(e, 'bottles')}
                         placeholder="0"
@@ -620,7 +666,8 @@ export default function DailyEntry() {
       )}
 
 
-      {/* === TABLE MODE === */}
+
+      {/* === TABLE MODE — Purchase column removed === */}
       {mode === 'table' && (
         <div className="card">
           <div className="card-header">
@@ -651,12 +698,12 @@ export default function DailyEntry() {
                       <td className="font-bold">{entry.particular}</td>
                       <td>{entry.openingStock}</td>
                       <td>
-                        <input type="number" min="0" value={entry.cases||''}
+                        <input type="number" min="0" value={entry.cases ?? ''}
                           onChange={e => setEntries(prev => prev.map(en => en.productId === entry.productId ? {...en, cases: Number(e.target.value)||0} : en))}
                           style={{ width: 60, padding: '6px 8px', textAlign: 'center', border: '2px solid var(--primary)' }} />
                       </td>
                       <td>
-                        <input type="number" min="0" value={entry.bottles||''}
+                        <input type="number" min="0" value={entry.bottles ?? ''}
                           onChange={e => setEntries(prev => prev.map(en => en.productId === entry.productId ? {...en, bottles: Number(e.target.value)||0} : en))}
                           style={{ width: 60, padding: '6px 8px', textAlign: 'center', border: '2px solid var(--primary)' }} />
                       </td>
@@ -675,6 +722,7 @@ export default function DailyEntry() {
           </div>
         </div>
       )}
+
 
 
       {/* === OPENING STOCK MODE === */}
@@ -748,13 +796,88 @@ export default function DailyEntry() {
       )}
 
 
+
+      {/* === STOCK RETURN MODE === */}
+      {mode === 'stockReturn' && (
+        <div>
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div className="card-header">
+              <h3>Stock Return</h3>
+              <button className="btn-success" onClick={handleSaveStockReturn} disabled={savingSR}>
+                {savingSR ? 'Saving...' : 'Save Stock Returns'}
+              </button>
+            </div>
+            <div className="card-body">
+              {/* Search/filter bar */}
+              <div style={{ marginBottom: 16 }}>
+                <input
+                  type="text"
+                  value={stockReturnFilter}
+                  onChange={e => setStockReturnFilter(e.target.value)}
+                  placeholder="Search by code or product name to filter..."
+                  style={{ maxWidth: 400, padding: '10px 14px' }}
+                />
+              </div>
+
+              {/* Table with all products */}
+              <div className="table-wrapper" style={{ maxHeight: '60vh', overflow: 'auto' }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Code</th>
+                      <th>Product Name</th>
+                      <th>Category</th>
+                      <th>Rate</th>
+                      <th>OP.ST</th>
+                      <th style={{ background: '#FFF3E0' }}>Stock Return (bottles)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {entries
+                      .filter(e => {
+                        if (!stockReturnFilter.trim()) return true;
+                        const term = stockReturnFilter.toLowerCase();
+                        return e.codeNo.toLowerCase().includes(term) || e.particular.toLowerCase().includes(term);
+                      })
+                      .map(entry => (
+                      <tr key={entry.productId} style={entry.stockReturn > 0 ? { background: '#FFF3E0' } : {}}>
+                        <td className="text-muted">{entry.codeNo || '--'}</td>
+                        <td className="font-bold">{entry.particular}</td>
+                        <td className="text-xs text-muted">{CATEGORIES[entry.category]?.label}</td>
+                        <td>{'\u20B9'}{entry.rate}</td>
+                        <td>{entry.openingStock}</td>
+                        <td>
+                          <input
+                            type="number" min="0"
+                            value={entry.stockReturn || ''}
+                            onChange={e => updateStockReturn(entry.productId, e.target.value)}
+                            placeholder="0"
+                            style={{ width: 90, padding: '6px 8px', textAlign: 'center', border: '2px solid #FF9800', fontWeight: 700 }}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div style={{ marginTop: 12, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                Products with stock return: {entries.filter(e => e.stockReturn > 0).length} / {entries.length}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+
       {/* === SUMMARY MODE === */}
       {mode === 'summary' && (
         <CaseAbstract entries={entries} calcEntry={calcEntry} />
       )}
 
-      {/* === 4. POS Amount (shown after entry complete or always in non-sequential modes) === */}
-      {(mode !== 'sequential' || entryComplete) && (
+      {/* === 4. POS Amount — ONLY in sequential mode after entry complete === */}
+      {mode === 'sequential' && entryComplete && (
         <div className="card" style={{ border: '2px solid var(--primary)' }}>
           <div className="card-header">
             <h3>POS / Digital Payment Amount</h3>
@@ -777,8 +900,8 @@ export default function DailyEntry() {
       )}
 
 
-      {/* === 5. Device vs Manual Comparison (always visible after entry or in non-sequential) === */}
-      {(mode !== 'sequential' || entryComplete) && (
+      {/* === 5. Device vs Manual Comparison — ONLY in sequential mode after entry complete === */}
+      {mode === 'sequential' && entryComplete && (
         <div className="card">
           <div className="card-header">
             <h3>Device vs Manual Comparison</h3>
@@ -839,8 +962,8 @@ export default function DailyEntry() {
       )}
 
 
-      {/* === 6. Denomination Counter === */}
-      {(mode !== 'sequential' || entryComplete) && (
+      {/* === 6. Denomination Counter — ONLY in sequential mode after entry complete === */}
+      {mode === 'sequential' && entryComplete && (
         <DenominationCounter
           denomination={denomination} setDenomination={setDenomination}
           totalCash={totalCash} totalSales={totals.totalSales}
@@ -848,8 +971,8 @@ export default function DailyEntry() {
         />
       )}
 
-      {/* === 7. Validation Status === */}
-      {(mode !== 'sequential' || entryComplete) && (
+      {/* === 7. Validation Status — ONLY in sequential mode after entry complete === */}
+      {mode === 'sequential' && entryComplete && (
         <div className={cashMatch && totals.totalSales > 0 ? 'status-match' : totals.totalSales > 0 ? 'status-mismatch' : 'card'} style={{ marginBottom: 20 }}>
           {totals.totalSales > 0 ? (
             cashMatch
@@ -861,13 +984,13 @@ export default function DailyEntry() {
         </div>
       )}
 
-      {/* === 8. Export Button === */}
-      {(mode !== 'sequential' || entryComplete) && (
+      {/* === 8. Download Button — ONLY in sequential mode after entry complete === */}
+      {mode === 'sequential' && entryComplete && (
         <div className="card">
           <div className="card-body" style={{ padding: '16px 24px' }}>
             <div className="flex-between">
               <div>
-                <h3 style={{ fontSize: '0.95rem', marginBottom: 4 }}>Export to Excel</h3>
+                <h3 style={{ fontSize: '0.95rem', marginBottom: 4 }}>Download as Excel</h3>
                 <p className="text-xs text-muted">
                   {cashMatch && totals.totalSales > 0
                     ? 'Validation passed. Ready to export.'
@@ -889,7 +1012,7 @@ export default function DailyEntry() {
                 }}
                 disabled={totals.totalSales === 0}
               >
-                Export Excel
+                Download as Excel
               </button>
             </div>
           </div>
