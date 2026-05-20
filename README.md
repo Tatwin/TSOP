@@ -2,7 +2,7 @@
 
 **Point of Sale & Inventory Management System for TASMAC Shop No. 1745, Alandurai, Coimbatore (North)**
 
-A production-grade hybrid desktop + web application for daily sales tracking, stock management, denomination counting, invoice management, and business analytics.
+A production-grade hybrid desktop + web application for daily sales tracking, stock management, denomination counting, invoice management, holiday calendar, and business analytics.
 
 ---
 
@@ -43,12 +43,29 @@ Web Dashboard (SECONDARY - read only)
 ### Core Operations
 - **Daily Sales Entry** — Sequential card-based entry (cases/bottles per product)
 - **Table Mode** — Bulk edit all products at once
-- **Opening Stock** — Auto-pulls previous day's closing stock
+- **Opening Stock** — Auto-pulls previous working day's closing stock (skips holidays)
 - **Stock Return to Depot** — Track bottles returned
 - **Purchase Invoice** — Multi-invoice with code-based product lookup
 - **Denomination Counter** — Cash counting with POS/digital payment
 - **Device vs Manual Comparison** — Verify billing machine totals
 - **Download as Excel** — Styled export with green headers, colored categories
+
+### Holiday & Calendar Management
+- **Sales Calendar** — Monthly grid showing daily sales totals per day
+- **Holiday Marking** — Admin & Operator can mark any date as a government holiday
+- **Holiday Reasons** — Record reason (e.g. Republic Day, Pongal, Dry Day)
+- **Visual Indicators** — Green = sales day, Red = holiday, with amount/reason labels
+- **Stock Carry-Forward** — On holidays, previous working day's closing stock automatically becomes the next working day's opening stock
+- **Monthly Summary** — Total sales, working days, holiday count, average per day
+- **Remove Holiday** — Unmark a date if marked by mistake
+
+### Product Management
+- **Add/Edit/Delete Products** — Persisted to backend database (survives navigation)
+- **Add/Edit/Delete Categories** — Dynamic categories with bottles-per-case
+- **Staff Management** — Salesmen and supervisors CRUD
+- **Hide/Show Products** — Toggle visibility without deleting
+- **Numeric Code Field** — Code input accepts only numbers
+- **Dynamic Filter Dropdown** — Shows all categories including newly added ones
 
 ### Business Intelligence
 - **Dashboard** — KPIs with growth %, today vs yesterday, weekly/monthly comparison
@@ -104,9 +121,9 @@ npm run dev
 
 | Role | PIN | Access |
 |------|-----|--------|
-| Admin | `1974` | Full access |
-| Operator | `1745` | Data entry, export |
-| Viewer | *(no PIN)* | Read-only |
+| Admin | `1974` | Full access (all features + manage users/backup) |
+| Operator | `1745` | Data entry, export, mark holidays |
+| Viewer | *(no PIN)* | Read-only (view data, calendar, dashboard) |
 
 ---
 
@@ -125,10 +142,11 @@ TSOP/
 │   │   │   └── security.js    # Rate limit, headers, validation
 │   │   ├── routes/
 │   │   │   ├── auth.js        # Login, user CRUD
-│   │   │   ├── dailyEntry.js  # Daily sales CRUD
+│   │   │   ├── dailyEntry.js  # Daily sales CRUD + opening stock (skips holidays)
 │   │   │   ├── denomination.js# Cash denomination
 │   │   │   ├── dashboard.js   # Analytics, comparisons, intelligence
 │   │   │   ├── products.js    # Product/staff/category CRUD
+│   │   │   ├── holidays.js    # Holiday marking/removal with audit
 │   │   │   ├── export.js      # Styled Excel export
 │   │   │   ├── backup.js      # Backup/restore/download
 │   │   │   ├── audit.js       # Activity logs
@@ -146,6 +164,7 @@ TSOP/
 │   │   │   ├── InvoicePage.jsx# Purchase invoice management
 │   │   │   ├── Dashboard.jsx  # BI dashboard with KPIs
 │   │   │   ├── Analytics.jsx  # Charts and insights
+│   │   │   ├── Calendar.jsx   # Holiday calendar + daily sales view
 │   │   │   ├── ActivityLogs.jsx# Audit trail viewer
 │   │   │   ├── BackupRestore.jsx# Backup management
 │   │   │   └── ManageProducts.jsx# Products/staff/categories
@@ -186,9 +205,25 @@ TSOP/
 | POST | `/api/daily-entry/:date/opening-stock` | Yes | Save opening stock |
 | POST | `/api/daily-entry/:date/stock-return` | Yes | Save stock returns |
 | POST | `/api/daily-entry/:date/purchases` | Yes | Save invoices |
+| GET | `/api/daily-entry/range/:start/:end` | No | Get entries for date range |
 | GET | `/api/denomination/:date` | No | Get denomination |
 | POST | `/api/denomination/:date` | Yes | Save denomination |
-| GET | `/api/products` | No | List products |
+| GET | `/api/products` | No | List products + categories |
+| POST | `/api/products` | Yes | Add new product |
+| PUT | `/api/products/:id/rate` | Yes | Update product rate |
+| PUT | `/api/products/:id/status` | Yes | Toggle product visibility |
+| POST | `/api/products/categories` | Yes | Add category |
+| PUT | `/api/products/categories/:key` | Yes | Edit category |
+| DELETE | `/api/products/categories/:key` | Yes | Delete category |
+| GET | `/api/products/staff` | No | Get staff list |
+| POST | `/api/products/staff` | Yes | Add staff member |
+| PUT | `/api/products/staff/:index` | Yes | Edit staff member |
+| DELETE | `/api/products/staff/:index` | Yes | Delete staff member |
+| GET | `/api/holidays` | No | List all holidays |
+| GET | `/api/holidays/:year/:month` | No | Holidays for a month |
+| POST | `/api/holidays` | Yes | Mark date as holiday |
+| DELETE | `/api/holidays/:date` | Yes | Remove holiday |
+| GET | `/api/holidays/check/:date` | No | Check if date is holiday |
 | GET | `/api/dashboard/today` | No | Today's summary |
 | GET | `/api/dashboard/analytics` | No | 30-day analytics |
 | GET | `/api/dashboard/comparison` | No | Growth comparisons |
@@ -200,6 +235,17 @@ TSOP/
 | POST | `/api/backup/create` | Yes | Create backup |
 | GET | `/api/notifications` | No | Active alerts |
 | GET | `/api/health` | No | System health |
+
+---
+
+## Holiday System
+
+When a date is marked as a holiday:
+1. The date appears as a **red cell** in the Calendar with the reason displayed
+2. The opening stock logic **skips holidays** when looking back for previous closing stock
+3. This means: if you close on Friday with 100 bottles, mark Saturday as holiday, then Monday's opening stock will correctly show 100 bottles (Friday's closing)
+4. Both **Admin** and **Operator** roles can mark/remove holidays
+5. All holiday changes are audit-logged
 
 ---
 
@@ -242,8 +288,8 @@ See `electron/BUILD.md` for detailed instructions.
 
 | Color | Hex | Usage |
 |-------|-----|-------|
-| Green | `#0E6633` | Primary, headers, success |
-| Red | `#D92426` | Danger, errors, negative values |
+| Green | `#0E6633` | Primary, headers, success, sales days |
+| Red | `#D92426` | Danger, errors, holidays, negative values |
 | White | `#FFFFFF` | Cards, backgrounds |
 | Light Gray | `#F4F6F4` | Body background, subtle fills |
 | Dark Green | `#1E291E` | Sidebar, dark text |
