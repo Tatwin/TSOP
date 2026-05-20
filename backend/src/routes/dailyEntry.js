@@ -55,12 +55,18 @@ router.get('/:date/opening-stock', (req, res) => {
     return res.json({ date, openingStock: dayData.openingStock, purchases: dayData?.purchases || {} });
   }
 
-  // Look backwards for the most recent day with data
+  // Get holidays to skip them when looking back
+  const holidays = fileStore.get('holidays') || {};
+
+  // Look backwards for the most recent working day with data (skip holidays)
   let openingStock = {};
-  for (let i = 1; i <= 31; i++) {
+  for (let i = 1; i <= 60; i++) {
     const prevDate = new Date(currentDate);
     prevDate.setDate(prevDate.getDate() - i);
     const prevDateStr = prevDate.toISOString().split('T')[0];
+    
+    // Skip holidays - they won't have valid closing stock
+    if (holidays[prevDateStr]) continue;
     
     const prevData = fileStore.getNested('dailyEntries', prevDateStr);
     if (prevData?.entries?.length > 0) {

@@ -11,6 +11,7 @@ const menuItems = [
   { path: '/analytics', icon: '📉', label: 'Analytics', description: 'Sales insights & charts' },
   { path: '/activity-logs', icon: '📋', label: 'Activity Logs', description: 'Audit trail & history' },
   { path: '/backup', icon: '💾', label: 'Backup', description: 'Backup & restore data' },
+  { path: '/calendar', icon: '📅', label: 'Calendar', description: 'Holidays & sales calendar' },
   { path: '/manage-products', icon: '⚙️', label: 'Manage', description: 'Products, staff, users' },
 ];
 
