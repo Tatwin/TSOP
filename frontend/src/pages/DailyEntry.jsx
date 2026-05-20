@@ -571,7 +571,7 @@ export default function DailyEntry() {
                         type="number"
                         min="0"
                         className="input-lg"
-                        value={currentEntry.cases ?? ''}
+                        value={currentEntry.cases || ''}
                         onChange={e => updateCurrentEntry('cases', e.target.value)}
                         onKeyDown={e => handleKeyDown(e, 'cases')}
                         placeholder="0"
@@ -585,7 +585,7 @@ export default function DailyEntry() {
                         type="number"
                         min="0"
                         className="input-lg"
-                        value={currentEntry.bottles ?? ''}
+                        value={currentEntry.bottles || ''}
                         onChange={e => updateCurrentEntry('bottles', e.target.value)}
                         onKeyDown={e => handleKeyDown(e, 'bottles')}
                         placeholder="0"
@@ -704,12 +704,12 @@ export default function DailyEntry() {
                       <td className="font-bold">{entry.particular}</td>
                       <td>{entry.openingStock}</td>
                       <td>
-                        <input type="number" min="0" value={entry.cases ?? ''}
+                        <input type="number" min="0" value={entry.cases || ''}
                           onChange={e => setEntries(prev => prev.map(en => en.productId === entry.productId ? {...en, cases: Number(e.target.value)||0} : en))}
                           style={{ width: 60, padding: '6px 8px', textAlign: 'center', border: '2px solid var(--primary)' }} />
                       </td>
                       <td>
-                        <input type="number" min="0" value={entry.bottles ?? ''}
+                        <input type="number" min="0" value={entry.bottles || ''}
                           onChange={e => setEntries(prev => prev.map(en => en.productId === entry.productId ? {...en, bottles: Number(e.target.value)||0} : en))}
                           style={{ width: 60, padding: '6px 8px', textAlign: 'center', border: '2px solid var(--primary)' }} />
                       </td>
