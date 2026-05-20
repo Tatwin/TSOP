@@ -139,11 +139,13 @@ export default function DailyEntry() {
   // Load data
   const loadData = async () => {
     try {
-      const [entryRes, osRes, denomRes] = await Promise.all([
+      const [entryRes, osRes, denomRes, productsRes] = await Promise.all([
         api.get(`/daily-entry/${selectedDate}`),
         api.get(`/daily-entry/${selectedDate}/opening-stock`),
-        api.get(`/denomination/${selectedDate}`)
+        api.get(`/denomination/${selectedDate}`),
+        api.get('/products')
       ]);
+      const activeProducts = (productsRes.data.products || DEFAULT_PRODUCTS).filter(p => p.status !== 'hidden');
       const os = osRes.data.openingStock || {};
       const purchases = osRes.data.purchases || {};
       const savedEntries = entryRes.data.entries;
@@ -151,7 +153,7 @@ export default function DailyEntry() {
       if (savedEntries?.length > 0) {
         setEntries(savedEntries.map(e => ({ ...e, openingStock: os[e.productId] || e.openingStock || 0 })));
       } else {
-        setEntries(DEFAULT_PRODUCTS.map(p => ({
+        setEntries(activeProducts.map(p => ({
           productId: p.id, sno: p.sno, codeNo: p.codeNo,
           particular: p.particular, category: p.category,
           cases: 0, bottles: 0, openingStock: os[p.id] || 0,

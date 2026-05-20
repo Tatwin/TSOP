@@ -86,20 +86,37 @@ export default function ManageProducts() {
     setNewRateValue(String(product.rate || 0));
   };
 
-  const saveRate = (productId) => {
+  const saveRate = async (productId) => {
     setProducts(prev => prev.map(p =>
       p.id === productId ? { ...p, rate: Number(newRateValue) || 0 } : p
     ));
+    try {
+      await api.put(`/products/${productId}/rate`, { rate: Number(newRateValue) || 0 });
+    } catch {}
     setEditingRate(null);
     setNewRateValue('');
-    showMsg('Rate updated successfully');
+    showMsg('Rate updated');
   };
 
-  const toggleStatus = (productId) => {
+  const toggleStatus = async (productId) => {
+    const product = products.find(p => p.id === productId);
+    const newStatus = product.status === 'active' ? 'hidden' : 'active';
     setProducts(prev => prev.map(p =>
-      p.id === productId ? { ...p, status: p.status === 'active' ? 'hidden' : 'active' } : p
+      p.id === productId ? { ...p, status: newStatus } : p
     ));
-    showMsg('Product status toggled');
+    try {
+      await api.put(`/products/${productId}/status`, { status: newStatus });
+    } catch {}
+    showMsg('Status updated');
+  };
+
+  const deleteProduct = async (productId, productName) => {
+    if (!window.confirm(`Delete "${productName}"? This cannot be undone.`)) return;
+    setProducts(prev => prev.filter(p => p.id !== productId));
+    try {
+      await api.put(`/products/${productId}/status`, { status: 'deleted' });
+    } catch {}
+    showMsg('Product deleted');
   };
 
 
@@ -492,8 +509,8 @@ export default function ManageProducts() {
                 <div style={{ flex: '1 1 180px' }}>
                   <label className="form-label">Category</label>
                   <select value={newProduct.category} onChange={(e) => setNewProduct({ ...newProduct, category: e.target.value })} style={{ padding: '10px' }}>
-                    {CATEGORY_ORDER.map(cat => (
-                      <option key={cat} value={cat}>{CATEGORIES[cat].label}</option>
+                    {Object.entries(categories).map(([key, cat]) => (
+                      <option key={key} value={key}>{cat.label}</option>
                     ))}
                   </select>
                 </div>
@@ -594,6 +611,10 @@ export default function ManageProducts() {
                           border: 'none', cursor: 'pointer'
                         }}>
                         {product.status === 'active' ? 'Hide' : 'Show'}
+                      </button>
+                      <button onClick={() => deleteProduct(product.id, product.particular)}
+                        style={{ padding: '4px 10px', borderRadius: '4px', fontSize: '0.75rem', background: '#FEE2E2', color: '#D92426', border: 'none', cursor: 'pointer', marginLeft: 4 }}>
+                        Delete
                       </button>
                     </td>
                   </tr>
