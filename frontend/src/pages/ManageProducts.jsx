@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CATEGORIES, DEFAULT_PRODUCTS, CATEGORY_ORDER } from '../data/products';
+import { CATEGORIES, DEFAULT_PRODUCTS } from '../data/products';
 import api from '../utils/api';
 
 function formatINR(num) {
@@ -42,6 +42,16 @@ export default function ManageProducts() {
   const [newStaffType, setNewStaffType] = useState('salesmen');
   const [editingStaff, setEditingStaff] = useState(null); // { type, index }
   const [editStaffName, setEditStaffName] = useState('');
+
+  // Load products and categories from API
+  useEffect(() => {
+    if (authenticated) {
+      api.get('/products').then(res => {
+        if (res.data.products) setProducts(res.data.products);
+        if (res.data.categories) setCategories(res.data.categories);
+      }).catch(() => {});
+    }
+  }, [authenticated]);
 
   // Load staff
   useEffect(() => {
@@ -179,6 +189,24 @@ export default function ManageProducts() {
     }));
     setEditingCategory(null);
     showMsg('Category updated');
+  };
+
+  // Delete category
+  const handleDeleteCategory = async (key, label) => {
+    const productCount = products.filter(p => p.category === key).length;
+    const confirmMsg = productCount > 0
+      ? `Delete category "${label}"? ${productCount} product(s) are in this category. They will become uncategorized.`
+      : `Delete category "${label}"?`;
+    if (!window.confirm(confirmMsg)) return;
+    setCategories(prev => {
+      const updated = { ...prev };
+      delete updated[key];
+      return updated;
+    });
+    try {
+      await api.delete(`/products/categories/${key}`);
+    } catch {}
+    showMsg('Category deleted');
   };
 
 
@@ -476,8 +504,12 @@ export default function ManageProducts() {
                             <button className="btn-sm btn-secondary" onClick={() => setEditingCategory(null)}>Cancel</button>
                           </div>
                         ) : (
-                          <button className="btn-sm" style={{ background: '#E8F5E9', color: 'var(--primary)', border: 'none', padding: '4px 8px', borderRadius: 4, cursor: 'pointer' }}
-                            onClick={() => startEditCategory(key)}>Edit</button>
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <button className="btn-sm" style={{ background: '#E8F5E9', color: 'var(--primary)', border: 'none', padding: '4px 8px', borderRadius: 4, cursor: 'pointer' }}
+                              onClick={() => startEditCategory(key)}>Edit</button>
+                            <button className="btn-sm" style={{ background: '#FEE2E2', color: 'var(--danger)', border: 'none', padding: '4px 8px', borderRadius: 4, cursor: 'pointer' }}
+                              onClick={() => handleDeleteCategory(key, cat.label)}>Delete</button>
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -500,7 +532,7 @@ export default function ManageProducts() {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'flex-end' }}>
                 <div style={{ flex: '1 1 120px' }}>
                   <label className="form-label">Code No</label>
-                  <input type="text" value={newProduct.codeNo} onChange={(e) => setNewProduct({ ...newProduct, codeNo: e.target.value })} placeholder="Code" style={{ padding: '10px' }} />
+                  <input type="text" inputMode="numeric" pattern="[0-9]*" value={newProduct.codeNo} onChange={(e) => setNewProduct({ ...newProduct, codeNo: e.target.value.replace(/[^0-9]/g, '') })} placeholder="Code" style={{ padding: '10px' }} />
                 </div>
                 <div style={{ flex: '2 1 200px' }}>
                   <label className="form-label">Product Name</label>
@@ -533,8 +565,8 @@ export default function ManageProducts() {
             <div style={{ flex: '1 1 180px' }}>
               <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} style={{ padding: '10px' }}>
                 <option value="ALL">All Categories</option>
-                {CATEGORY_ORDER.map(cat => (
-                  <option key={cat} value={cat}>{CATEGORIES[cat].label}</option>
+                {Object.entries(categories).map(([key, cat]) => (
+                  <option key={key} value={key}>{cat.label}</option>
                 ))}
               </select>
             </div>
@@ -576,7 +608,7 @@ export default function ManageProducts() {
                     <td>{product.sno}</td>
                     <td>{product.codeNo}</td>
                     <td style={{ fontWeight: '600' }}>{product.particular}</td>
-                    <td style={{ fontSize: '0.8rem' }}>{CATEGORIES[product.category]?.label || product.category}</td>
+                    <td style={{ fontSize: '0.8rem' }}>{categories[product.category]?.label || product.category}</td>
                     <td>
                       {editingRate === product.id ? (
                         <div style={{ display: 'flex', gap: '4px' }}>

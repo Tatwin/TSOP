@@ -99,6 +99,30 @@ router.put('/categories/:key', authMiddleware, (req, res) => {
   res.json({ success: true, category: { key, ...categories[key] } });
 });
 
+// DELETE /api/products/categories/:key - Delete a category
+router.delete('/categories/:key', authMiddleware, (req, res) => {
+  const { key } = req.params;
+  const categories = getCategories();
+
+  if (!categories[key]) {
+    return res.status(404).json({ error: 'Category not found' });
+  }
+
+  const removed = categories[key];
+  delete categories[key];
+  fileStore.set('categories', categories);
+
+  auditService.log({
+    action: 'DELETE',
+    module: 'products',
+    user: req.user?.username || 'admin',
+    description: `Category deleted: ${removed.label} (${key})`,
+    previousValue: { key, ...removed }
+  });
+
+  res.json({ success: true, deletedKey: key });
+});
+
 // GET /api/products/staff - Get staff list
 router.get('/staff', (req, res) => {
   res.json({ staff: getStaff() });
