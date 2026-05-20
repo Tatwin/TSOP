@@ -130,25 +130,27 @@ export default function ManageProducts() {
   };
 
 
-  const addProduct = () => {
+  const addProduct = async () => {
     if (!newProduct.particular.trim()) {
       showMsg('Product name is required');
       return;
     }
-    const maxId = Math.max(...products.map(p => Number(p.id)));
-    const newSno = Math.max(...products.map(p => p.sno)) + 1;
-    setProducts([...products, {
-      id: String(maxId + 1),
-      sno: newSno,
-      codeNo: newProduct.codeNo,
-      particular: newProduct.particular.toUpperCase(),
-      category: newProduct.category,
-      rate: Number(newProduct.rate) || 0,
-      status: 'active'
-    }]);
-    setNewProduct({ codeNo: '', particular: '', category: '180ML_BRANDY', rate: 0 });
-    setShowAddForm(false);
-    showMsg('Product added successfully');
+    try {
+      const res = await api.post('/products', {
+        codeNo: newProduct.codeNo,
+        particular: newProduct.particular,
+        category: newProduct.category,
+        rate: Number(newProduct.rate) || 0
+      });
+      if (res.data.product) {
+        setProducts(prev => [...prev, res.data.product]);
+      }
+      setNewProduct({ codeNo: '', particular: '', category: '180ML_BRANDY', rate: 0 });
+      setShowAddForm(false);
+      showMsg('Product added successfully');
+    } catch {
+      showMsg('Failed to add product');
+    }
   };
 
   const showMsg = (msg) => {
@@ -156,7 +158,7 @@ export default function ManageProducts() {
     setTimeout(() => setMessage(''), 3000);
   };
 
-  const handleAddCategory = () => {
+  const handleAddCategory = async () => {
     if (!newCategory.key.trim() || !newCategory.label.trim()) {
       showMsg('Category key and label are required');
       return;
@@ -166,13 +168,28 @@ export default function ManageProducts() {
       showMsg('Category key already exists');
       return;
     }
-    setCategories(prev => ({
-      ...prev,
-      [key]: { label: newCategory.label, bottlesPerCase: Number(newCategory.bottlesPerCase) || 48 }
-    }));
-    setNewCategory({ key: '', label: '', bottlesPerCase: 48 });
-    setShowAddCategory(false);
-    showMsg('Category added successfully');
+    try {
+      const res = await api.post('/products/categories', {
+        key: newCategory.key,
+        label: newCategory.label,
+        bottlesPerCase: Number(newCategory.bottlesPerCase) || 48
+      });
+      if (res.data.category) {
+        setCategories(prev => ({
+          ...prev,
+          [res.data.category.key]: { label: res.data.category.label, bottlesPerCase: res.data.category.bottlesPerCase }
+        }));
+      }
+      setNewCategory({ key: '', label: '', bottlesPerCase: 48 });
+      setShowAddCategory(false);
+      showMsg('Category added successfully');
+    } catch (err) {
+      if (err.response?.status === 409) {
+        showMsg('Category key already exists');
+      } else {
+        showMsg('Failed to add category');
+      }
+    }
   };
 
   // Edit category
@@ -182,12 +199,15 @@ export default function ManageProducts() {
     setEditCatBPC(String(categories[key].bottlesPerCase));
   };
 
-  const saveEditCategory = (key) => {
+  const saveEditCategory = async (key) => {
     setCategories(prev => ({
       ...prev,
       [key]: { ...prev[key], label: editCatLabel, bottlesPerCase: Number(editCatBPC) || 48 }
     }));
     setEditingCategory(null);
+    try {
+      await api.put(`/products/categories/${key}`, { label: editCatLabel, bottlesPerCase: Number(editCatBPC) || 48 });
+    } catch {}
     showMsg('Category updated');
   };
 
