@@ -43,13 +43,16 @@ export default function ManageProducts() {
   const [editingStaff, setEditingStaff] = useState(null); // { type, index }
   const [editStaffName, setEditStaffName] = useState('');
 
+  const [loadingData, setLoadingData] = useState(false);
+
   // Load products and categories from API
   useEffect(() => {
     if (authenticated) {
+      setLoadingData(true);
       api.get('/products').then(res => {
         if (res.data.products) setProducts(res.data.products);
         if (res.data.categories) setCategories(res.data.categories);
-      }).catch(() => {});
+      }).catch(() => {}).finally(() => setLoadingData(false));
     }
   }, [authenticated]);
 
@@ -200,15 +203,19 @@ export default function ManageProducts() {
   };
 
   const saveEditCategory = async (key) => {
+    const updatedLabel = editCatLabel;
+    const updatedBPC = Number(editCatBPC) || 48;
     setCategories(prev => ({
       ...prev,
-      [key]: { ...prev[key], label: editCatLabel, bottlesPerCase: Number(editCatBPC) || 48 }
+      [key]: { ...prev[key], label: updatedLabel, bottlesPerCase: updatedBPC }
     }));
     setEditingCategory(null);
     try {
-      await api.put(`/products/categories/${key}`, { label: editCatLabel, bottlesPerCase: Number(editCatBPC) || 48 });
-    } catch {}
-    showMsg('Category updated');
+      await api.put(`/products/categories/${key}`, { label: updatedLabel, bottlesPerCase: updatedBPC });
+      showMsg('Category updated');
+    } catch {
+      showMsg('Failed to save category to server');
+    }
   };
 
   // Delete category
@@ -293,6 +300,13 @@ export default function ManageProducts() {
 
   return (
     <div>
+      {loadingData && (
+        <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+          <div style={{ fontSize: '1.5rem', marginBottom: 8 }}>Loading...</div>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Fetching products & categories</p>
+        </div>
+      )}
+      {!loadingData && <>
       <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', padding: '16px 24px' }}>
         <h2 style={{ fontSize: '1.2rem', color: 'var(--text-dark)' }}>Manage Products</h2>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -676,6 +690,7 @@ export default function ManageProducts() {
           </div>
         </div>
       </>)}
+      </>}
     </div>
   );
 }

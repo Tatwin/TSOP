@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { CATEGORIES } from '../data/products';
+import { CATEGORIES as DEFAULT_CATEGORIES } from '../data/products';
 import api from '../utils/api';
 
 function formatINR(num) {
@@ -12,6 +12,7 @@ export default function Calendar() {
   const [month, setMonth] = useState(today.getMonth()); // 0-indexed
   const [holidays, setHolidays] = useState({});
   const [salesData, setSalesData] = useState({});
+  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   const [loading, setLoading] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
   const [showMarkHoliday, setShowMarkHoliday] = useState(false);
@@ -22,10 +23,17 @@ export default function Calendar() {
     'July', 'August', 'September', 'October', 'November', 'December'];
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+  // Load categories from API once on mount
+  useEffect(() => {
+    api.get('/products').then(res => {
+      if (res.data.categories) setCategories(res.data.categories);
+    }).catch(() => {});
+  }, []);
+
   // Load holidays and sales data for the current month
   useEffect(() => {
     loadMonthData();
-  }, [year, month]);
+  }, [year, month, categories]);
 
   const loadMonthData = async () => {
     setLoading(true);
@@ -42,14 +50,14 @@ export default function Calendar() {
 
       setHolidays(holidayRes.data.holidays || {});
 
-      // Extract total sales for each day
+      // Extract total sales for each day using dynamic categories
       const dailySales = {};
       const data = salesRes.data.data || {};
       Object.entries(data).forEach(([date, dayData]) => {
         if (dayData?.entries?.length > 0) {
           let total = 0;
           dayData.entries.forEach(entry => {
-            const caseSize = CATEGORIES[entry.category]?.bottlesPerCase || 48;
+            const caseSize = categories[entry.category]?.bottlesPerCase || 48;
             const sales = (entry.openingStock || 0) + (entry.purchase || 0) - (entry.stockReturn || 0) -
               ((entry.cases || 0) * caseSize + (entry.bottles || 0));
             total += Math.max(0, sales) * (entry.rate || 0);
