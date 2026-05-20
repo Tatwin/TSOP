@@ -244,7 +244,7 @@ export default function DailyEntry() {
           stockReturnData[e.productId] = e.stockReturn;
         }
       });
-      await api.post(`/daily-entry/${selectedDate}/stock-return`, { stockReturn: stockReturnData });
+      await api.post(`/daily-entry/${selectedDate}/stock-return`, { stockReturns: stockReturnData });
       setSaveMsg('Stock returns saved successfully');
     } catch { setSaveMsg('Failed to save stock returns'); }
     finally { setSavingSR(false); setTimeout(() => setSaveMsg(''), 3000); }
