@@ -1,16 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { CATEGORIES, DEFAULT_PRODUCTS } from '../data/products';
 import api from '../utils/api';
-
-function formatINR(num) {
-  return new Intl.NumberFormat('en-IN').format(num);
-}
 
 const PIN_REQUIRED = '1745';
 
 export default function ManageProducts() {
-  const navigate = useNavigate();
   const [authenticated, setAuthenticated] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState('');

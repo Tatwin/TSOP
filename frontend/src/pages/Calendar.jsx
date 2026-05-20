@@ -288,9 +288,8 @@ export default function Calendar() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{
                     fontSize: '0.85rem', fontWeight: isTodayCell ? 800 : 600,
-                    color: isHoliday ? '#D92426' : isSunday ? '#D92426' : 'var(--text-dark)',
-                    background: isTodayCell ? 'var(--primary)' : 'transparent',
                     color: isTodayCell ? 'white' : isHoliday ? '#D92426' : isSunday ? '#D92426' : 'var(--text-dark)',
+                    background: isTodayCell ? 'var(--primary)' : 'transparent',
                     borderRadius: '50%', width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center'
                   }}>
                     {day}
