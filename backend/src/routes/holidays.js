@@ -16,6 +16,15 @@ router.get('/', (req, res) => {
   res.json({ holidays: getHolidays() });
 });
 
+// GET /api/holidays/check/:date - Check if a specific date is a holiday
+// MUST be before /:year/:month to avoid route conflict
+router.get('/check/:date', (req, res) => {
+  const { date } = req.params;
+  const holidays = getHolidays();
+  const isHoliday = !!holidays[date];
+  res.json({ date, isHoliday, holiday: holidays[date] || null });
+});
+
 // GET /api/holidays/:year/:month - Get holidays for a specific month
 router.get('/:year/:month', (req, res) => {
   const { year, month } = req.params;
@@ -89,14 +98,6 @@ router.delete('/:date', authMiddleware, (req, res) => {
   });
 
   res.json({ success: true, date, removed });
-});
-
-// GET /api/holidays/check/:date - Check if a specific date is a holiday
-router.get('/check/:date', (req, res) => {
-  const { date } = req.params;
-  const holidays = getHolidays();
-  const isHoliday = !!holidays[date];
-  res.json({ date, isHoliday, holiday: holidays[date] || null });
 });
 
 module.exports = router;

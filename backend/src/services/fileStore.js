@@ -75,6 +75,13 @@ function get(key) {
       return database.getAuditLogs();
     case 'settings':
       return database.getSettings();
+    case 'holidays': {
+      const settings = database.getSettings();
+      if (settings.holidays) {
+        try { return JSON.parse(settings.holidays); } catch { return {}; }
+      }
+      return {};
+    }
     default:
       // For any unknown key, return null
       return null;
@@ -109,6 +116,9 @@ function set(key, value) {
       break;
     case 'settings':
       database.setAllSettings(value || {});
+      break;
+    case 'holidays':
+      database.setSetting('holidays', JSON.stringify(value || {}));
       break;
     default:
       // Unknown key - ignore silently

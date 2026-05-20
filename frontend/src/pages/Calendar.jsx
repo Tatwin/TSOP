@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { CATEGORIES } from '../data/products';
 import api from '../utils/api';
 
 function formatINR(num) {
@@ -48,8 +49,9 @@ export default function Calendar() {
         if (dayData?.entries?.length > 0) {
           let total = 0;
           dayData.entries.forEach(entry => {
+            const caseSize = CATEGORIES[entry.category]?.bottlesPerCase || 48;
             const sales = (entry.openingStock || 0) + (entry.purchase || 0) - (entry.stockReturn || 0) -
-              ((entry.cases || 0) * 48 + (entry.bottles || 0));
+              ((entry.cases || 0) * caseSize + (entry.bottles || 0));
             total += Math.max(0, sales) * (entry.rate || 0);
           });
           dailySales[date] = total;
