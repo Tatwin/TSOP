@@ -260,9 +260,9 @@ router.post('/daily', authMiddleware, (req, res) => {
     // === MERGES ===
     ws['!merges'] = merges;
 
-    // === AUTO FILTER on header row (row 7 = index 6) ===
-    // This allows filtering by OP.ST, PURCHASE, CL.ST, SALES etc. to find items sold on that date
-    ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 6, c: 0 }, e: { r: 6, c: 16 } }) };
+    // === AUTO FILTER on header row through last data row (before totals) ===
+    // Filter covers only product data rows, not totals/POS/denomination below
+    ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 6, c: 0 }, e: { r: totalsRowIdx - 2, c: 16 } }) };
 
     // === ROW HEIGHTS ===
     ws['!rows'] = [{ hpt: 24 }]; // Title row height

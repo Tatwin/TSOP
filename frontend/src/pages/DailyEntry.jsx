@@ -244,9 +244,13 @@ export default function DailyEntry() {
           stockReturnData[e.productId] = e.stockReturn;
         }
       });
-      await api.post(`/daily-entry/${selectedDate}/stock-return`, { stockReturns: stockReturnData });
-      setSaveMsg('Stock returns saved successfully');
-    } catch { setSaveMsg('Failed to save stock returns'); }
+      const res = await api.post(`/daily-entry/${selectedDate}/stock-return`, { stockReturns: stockReturnData });
+      if (res.data.success) {
+        setSaveMsg('Stock returns saved successfully');
+      } else {
+        setSaveMsg('Failed: ' + (res.data.error || 'Unknown error'));
+      }
+    } catch (err) { setSaveMsg('Failed to save: ' + (err.response?.data?.error || err.message || 'Network error')); }
     finally { setSavingSR(false); setTimeout(() => setSaveMsg(''), 3000); }
   };
 
@@ -819,7 +823,7 @@ export default function DailyEntry() {
                 />
               </div>
 
-              {/* Table with all products */}
+              {/* Table with products that HAVE opening stock only */}
               <div className="table-wrapper" style={{ maxHeight: '60vh', overflow: 'auto' }}>
                 <table>
                   <thead>
@@ -835,6 +839,8 @@ export default function DailyEntry() {
                   <tbody>
                     {entries
                       .filter(e => {
+                        // Only show products with opening stock > 0
+                        if ((e.openingStock || 0) <= 0 && (e.stockReturn || 0) <= 0) return false;
                         if (!stockReturnFilter.trim()) return true;
                         const term = stockReturnFilter.toLowerCase();
                         return e.codeNo.toLowerCase().includes(term) || e.particular.toLowerCase().includes(term);
