@@ -333,10 +333,11 @@ export default function InvoicePage() {
       {invoices.map((invoice, idx) => {
         const itemsTotal = (invoice.items || []).reduce((s, i) => s + i.qty * i.rate, 0);
         const matched = Math.abs(itemsTotal - invoice.invoiceAmount) < 1;
+        const exceeded = itemsTotal > invoice.invoiceAmount + 1;
         const totalBottles = (invoice.items || []).reduce((s, i) => s + i.qty, 0);
 
         return (
-          <div key={idx} className="card" style={{ border: matched ? '2px solid var(--success)' : '1px solid var(--border)' }}>
+          <div key={idx} className="card" style={{ border: matched ? '2px solid var(--success)' : exceeded ? '2px solid var(--danger)' : '1px solid var(--border)' }}>
             <div className="card-header">
               <div>
                 <h3 style={{ fontSize: '0.95rem' }}>Invoice #{invoice.invoiceNo || `(${idx + 1})`}</h3>
@@ -345,6 +346,8 @@ export default function InvoicePage() {
               <div className="flex gap-8" style={{ alignItems: 'center' }}>
                 {matched ? (
                   <span className="badge badge-success">[OK] Matched</span>
+                ) : exceeded ? (
+                  <span className="badge badge-danger">[!] Exceeded by {'\u20B9'}{formatINR(itemsTotal - invoice.invoiceAmount)}</span>
                 ) : (
                   <span className="badge badge-warning">{'\u20B9'}{formatINR(invoice.invoiceAmount - itemsTotal)} remaining</span>
                 )}
@@ -419,7 +422,7 @@ export default function InvoicePage() {
                 <h3 style={{ fontSize: '1rem' }}>Add Products to Invoice #{currentInvoice.invoiceNo}</h3>
                 <p className="text-xs text-muted" style={{ marginTop: 4 }}>
                   Invoice: {'\u20B9'}{formatINR(currentInvoice.invoiceAmount)} | Added: {'\u20B9'}{formatINR(currentPurchaseTotal)} |
-                  <strong style={{ color: remainingAmount <= 0 ? 'var(--success)' : 'var(--warning)' }}> Remaining: {'\u20B9'}{formatINR(Math.max(0, remainingAmount))}</strong>
+                  <strong style={{ color: Math.abs(remainingAmount) < 1 ? 'var(--success)' : remainingAmount < 0 ? 'var(--danger)' : 'var(--warning)' }}> {remainingAmount < -1 ? `Exceeded by ₹${formatINR(Math.abs(remainingAmount))}` : `Remaining: ₹${formatINR(Math.max(0, remainingAmount))}`}</strong>
                 </p>
               </div>
               <button className="btn-secondary btn-sm" onClick={() => setShowPurchaseDialog(false)}>Close</button>
@@ -428,11 +431,15 @@ export default function InvoicePage() {
             <div className="modal-body">
               {/* Progress indicator */}
               <div className="progress-bar-container" style={{ marginBottom: 20 }}>
-                <div className="progress-bar-fill" style={{ width: `${Math.min(100, (currentPurchaseTotal / (currentInvoice.invoiceAmount || 1)) * 100)}%`, background: remainingAmount <= 0 ? 'var(--success)' : undefined }} />
+                <div className="progress-bar-fill" style={{ width: `${Math.min(100, (currentPurchaseTotal / (currentInvoice.invoiceAmount || 1)) * 100)}%`, background: Math.abs(remainingAmount) < 1 ? 'var(--success)' : remainingAmount < 0 ? 'var(--danger)' : undefined }} />
               </div>
 
-              {remainingAmount <= 0 && (
+              {Math.abs(remainingAmount) < 1 && currentPurchaseTotal > 0 && (
                 <div className="status-match mb-16">[OK] Invoice amount matched!</div>
+              )}
+
+              {remainingAmount < -1 && (
+                <div className="status-mismatch mb-16">[!] Purchase total EXCEEDS invoice amount by ₹{formatINR(Math.abs(remainingAmount))}</div>
               )}
 
               {/* Code Input */}

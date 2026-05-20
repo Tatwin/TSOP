@@ -1,22 +1,27 @@
-# TASMAC POS System - Shop No. 1745
+# TASMAC POS - Shop No. 1745
 
-**Point of Sale web application for TASMAC (Tamil Nadu State Marketing Corporation) alcohol retail shop.**
+**Point of Sale & Inventory Management System for TASMAC Shop No. 1745, Alandurai, Coimbatore (North)**
 
-Shop: SF NO-1101/1A, Siruvani Main Road, Near H.P Petrol Bunk, Alandurai, Coimbatore-(North) - 641101  
-Owner: ANTONYSAMY.A | Mobile: 99429 10707, 99422 10707
+A production-grade hybrid desktop + web application for daily sales tracking, stock management, denomination counting, invoice management, and business analytics.
 
 ---
 
-## Features
+## Architecture
 
-- **Daily Entry Form** — Enter closing stock (cases + bottles), purchases, stock returns for all 54 products
-- **Real-time Calculations** — Auto-computes CL.ST, TOTAL, SALES, SALES AMT, all values
-- **Opening Stock Auto-Pull** — Previous day's closing stock carried forward automatically
-- **Category Filtering** — View one category at a time (15 categories with proper case sizes)
-- **Denomination Counter** — Cash reconciliation with RED/GREEN validation
-- **Excel Export** — One-click download matching the exact reference format
-- **Dashboard** — Today's summary, monthly view, product catalog
-- **Authentication** — JWT-based login
+```
+Electron Desktop App (PRIMARY)
+├── React 18 + Vite (Frontend UI)
+├── Express.js (Embedded Backend API)
+├── SQLite via better-sqlite3 (Local Database)
+├── Auto Backup (every 30 min, VACUUM INTO)
+├── Firebase Sync (optional, queue-based)
+└── NSIS Installer + Portable Build
+
+Web Dashboard (SECONDARY - read only)
+└── Firebase Firestore → Analytics access
+```
+
+**Desktop is the source of truth.** Web dashboard is for remote monitoring only.
 
 ---
 
@@ -24,42 +29,84 @@ Owner: ANTONYSAMY.A | Mobile: 99429 10707, 99422 10707
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | React 18 + Vite + React Router |
-| Backend | Node.js + Express |
-| Auth | JWT (jsonwebtoken) |
-| Excel Export | SheetJS (xlsx) |
-| Database | In-memory (swap for Firebase Firestore in production) |
+| Frontend | React 18, Vite, Axios |
+| Backend | Express.js, JWT, xlsx-js-style |
+| Database | SQLite (better-sqlite3), WAL mode |
+| Desktop | Electron, electron-builder |
+| Cloud Sync | Firebase Admin SDK (optional) |
+| Auth | PIN-based, RBAC (admin/operator/viewer) |
+
+---
+
+## Features
+
+### Core Operations
+- **Daily Sales Entry** — Sequential card-based entry (cases/bottles per product)
+- **Table Mode** — Bulk edit all products at once
+- **Opening Stock** — Auto-pulls previous day's closing stock
+- **Stock Return to Depot** — Track bottles returned
+- **Purchase Invoice** — Multi-invoice with code-based product lookup
+- **Denomination Counter** — Cash counting with POS/digital payment
+- **Device vs Manual Comparison** — Verify billing machine totals
+- **Download as Excel** — Styled export with green headers, colored categories
+
+### Business Intelligence
+- **Dashboard** — KPIs with growth %, today vs yesterday, weekly/monthly comparison
+- **Analytics** — 30-day sales trend, category breakdown, top products, top 5 days
+- **Inventory Intelligence** — Reorder suggestions, fast-moving, dead stock, anomalies
+- **Notifications** — Low stock, cash mismatch, missing entries, sales spikes
+
+### Enterprise Features
+- **SQLite Database** — Survives restarts, WAL mode, ACID transactions
+- **RBAC** — Admin (PIN: 1974), Operator (PIN: 1745), Viewer (no PIN)
+- **Audit Logs** — Every action tracked with who/what/when/previous/new values
+- **Auto Backup** — Every 30 min via VACUUM INTO, 20 max retention
+- **Global Search** — Ctrl+K to search products, pages, categories
+- **Keyboard Shortcuts** — Ctrl+K (search), Ctrl+S (save), Enter navigation
+- **Error Boundaries** — Graceful error handling with recovery UI
+- **Security** — Rate limiting, brute force protection, input validation, security headers
+
+### Hybrid Desktop + Web
+- **Electron App** — Express embedded in-process (no separate server)
+- **Firebase Sync** — Queue-based, 5-min interval, offline-resilient
+- **Web Dashboard** — Read-only analytics from Firestore
+- **NSIS Installer** — One-click install, desktop shortcuts, portable build
+- **Auto-Updater** — Updates from GitHub Releases
 
 ---
 
 ## Quick Start
 
-### Prerequisites
-- Node.js 18+ installed
-
-### Installation
+### Web Mode (Development)
 
 ```bash
-# Install all dependencies
+# Install dependencies
 cd backend && npm install
 cd ../frontend && npm install
+
+# Start backend (Terminal 1)
+cd backend && npm run dev
+# → http://localhost:5000
+
+# Start frontend (Terminal 2)
+cd frontend && npm run dev
+# → http://localhost:5173
 ```
 
-### Running Locally
+### Desktop Mode (Electron)
 
 ```bash
-# Start backend (port 5000)
-cd backend && npm run dev
-
-# Start frontend (port 5173) - in another terminal
-cd frontend && npm run dev
+cd electron && npm install
+npm run dev
 ```
 
-Open http://localhost:5173 in your browser.
+### Login
 
-### Default Login
-- **Username:** `antonysamy`
-- **Password:** `tasmac1745`
+| Role | PIN | Access |
+|------|-----|--------|
+| Admin | `1974` | Full access |
+| Operator | `1745` | Data entry, export |
+| Viewer | *(no PIN)* | Read-only |
 
 ---
 
@@ -67,86 +114,144 @@ Open http://localhost:5173 in your browser.
 
 ```
 TSOP/
-├── backend/
+├── backend/                    # Express API
+│   ├── data/
+│   │   ├── tasmac.db          # SQLite database (all data)
+│   │   └── backups/           # Auto & manual backups
 │   ├── src/
-│   │   ├── config/          # Firebase & in-memory DB config
-│   │   ├── data/
-│   │   │   └── products.js  # All 54 products with categories
+│   │   ├── index.js           # Server entry (embeddable)
 │   │   ├── middleware/
-│   │   │   └── auth.js      # JWT authentication
+│   │   │   ├── auth.js        # JWT + RBAC (3 roles, 16 permissions)
+│   │   │   └── security.js    # Rate limit, headers, validation
 │   │   ├── routes/
-│   │   │   ├── auth.js      # Login/logout
-│   │   │   ├── dailyEntry.js # Daily data CRUD
-│   │   │   ├── denomination.js # Cash denomination
-│   │   │   ├── dashboard.js # Summary APIs
-│   │   │   ├── export.js    # Excel export
-│   │   │   └── products.js  # Product management
-│   │   └── index.js         # Express server entry
+│   │   │   ├── auth.js        # Login, user CRUD
+│   │   │   ├── dailyEntry.js  # Daily sales CRUD
+│   │   │   ├── denomination.js# Cash denomination
+│   │   │   ├── dashboard.js   # Analytics, comparisons, intelligence
+│   │   │   ├── products.js    # Product/staff/category CRUD
+│   │   │   ├── export.js      # Styled Excel export
+│   │   │   ├── backup.js      # Backup/restore/download
+│   │   │   ├── audit.js       # Activity logs
+│   │   │   └── notifications.js # Alert system
+│   │   └── services/
+│   │       ├── database.js    # SQLite via better-sqlite3
+│   │       ├── fileStore.js   # API wrapper (drop-in)
+│   │       ├── auditService.js# Audit logging
+│   │       └── reliability.js # Health checks, repair
 │   └── package.json
-├── frontend/
+├── frontend/                   # React + Vite
 │   ├── src/
-│   │   ├── components/
-│   │   │   ├── Layout.jsx
-│   │   │   └── DenominationCounter.jsx
-│   │   ├── context/
-│   │   │   └── AuthContext.jsx
-│   │   ├── data/
-│   │   │   └── products.js  # Shared product data
 │   │   ├── pages/
-│   │   │   ├── DailyEntry.jsx  # Main data entry
-│   │   │   ├── Dashboard.jsx
-│   │   │   └── Login.jsx
-│   │   ├── utils/
-│   │   │   └── api.js       # Axios instance
-│   │   ├── App.jsx
-│   │   ├── main.jsx
-│   │   └── index.css
-│   ├── index.html
-│   ├── vite.config.js
+│   │   │   ├── DailyEntry.jsx # Main entry (sequential/table/stock return)
+│   │   │   ├── InvoicePage.jsx# Purchase invoice management
+│   │   │   ├── Dashboard.jsx  # BI dashboard with KPIs
+│   │   │   ├── Analytics.jsx  # Charts and insights
+│   │   │   ├── ActivityLogs.jsx# Audit trail viewer
+│   │   │   ├── BackupRestore.jsx# Backup management
+│   │   │   └── ManageProducts.jsx# Products/staff/categories
+│   │   ├── components/
+│   │   │   ├── Layout.jsx     # Sidebar + header + search
+│   │   │   ├── GlobalSearch.jsx# Ctrl+K search modal
+│   │   │   ├── NotificationBell.jsx# Alert dropdown
+│   │   │   ├── ToastNotification.jsx# Toast system
+│   │   │   ├── ErrorBoundary.jsx# Error handling
+│   │   │   ├── DenominationCounter.jsx
+│   │   │   ├── CaseAbstract.jsx
+│   │   │   └── InvoiceSection.jsx
+│   │   └── context/AuthContext.jsx
 │   └── package.json
-└── package.json
+├── electron/                   # Desktop app
+│   ├── main.js                # Electron main process
+│   ├── preload.js             # IPC bridge
+│   ├── src/
+│   │   ├── database/          # SQLite schema (Electron-specific)
+│   │   ├── backup/autoBackup.js
+│   │   └── firebase/          # Sync service + config
+│   └── package.json
+├── ARCHITECTURE.md             # System design
+├── FIREBASE_SYNC_GUIDE.md      # Firebase setup guide
+├── SETUP_GUIDE.md              # How to run everything
+└── README.md                   # This file
 ```
 
 ---
 
-## Categories & Case Sizes
+## API Endpoints
 
-| Category | Bottles/Case |
-|----------|-------------|
-| 180ml Brandy/Whiskey/Rum/Wine/Vodka & Gin | 48 |
-| 375ml Brandy/Whiskey/Rum/Wine/Vodka & Gin | 24 |
-| 720ml (all items) | 12 |
-| 1000ml (all items) | 9 |
-| Beer 650ml | 48 |
-| Beer 325ml & 500ml / 500ml Can | 24 |
-
----
-
-## Daily Workflow
-
-1. **Select Date** → defaults to today
-2. **Click "Load Data"** → fetches previous day's closing stock as opening stock
-3. **Enter per product:** CASE, BOTTLE, PURCHASE, STOCK RETURN
-4. **Fill Denomination Counter** → cash reconciliation
-5. **Verify** RED/GREEN indicator → cash vs sales match
-6. **Save** → stores to database
-7. **Export Excel** → downloads .xlsx in exact reference format
-
----
-
-## Production Deployment
-
-1. Set up Firebase Firestore and update `.env` with credentials
-2. Deploy backend to Render/Railway
-3. Deploy frontend to Vercel (set `VITE_API_URL` env var)
-4. Update CORS origin in backend
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/api/auth/login` | No | Login with PIN |
+| GET | `/api/daily-entry/:date` | No | Get daily entries |
+| POST | `/api/daily-entry/:date` | Yes | Save daily entries |
+| POST | `/api/daily-entry/:date/opening-stock` | Yes | Save opening stock |
+| POST | `/api/daily-entry/:date/stock-return` | Yes | Save stock returns |
+| POST | `/api/daily-entry/:date/purchases` | Yes | Save invoices |
+| GET | `/api/denomination/:date` | No | Get denomination |
+| POST | `/api/denomination/:date` | Yes | Save denomination |
+| GET | `/api/products` | No | List products |
+| GET | `/api/dashboard/today` | No | Today's summary |
+| GET | `/api/dashboard/analytics` | No | 30-day analytics |
+| GET | `/api/dashboard/comparison` | No | Growth comparisons |
+| GET | `/api/dashboard/top-days` | No | Top 5 sales days |
+| GET | `/api/dashboard/inventory-intelligence` | No | Reorder/dead stock |
+| POST | `/api/export/daily` | Yes | Download Excel |
+| GET | `/api/audit/logs` | No | Activity logs |
+| GET | `/api/backup/list` | Yes | List backups |
+| POST | `/api/backup/create` | Yes | Create backup |
+| GET | `/api/notifications` | No | Active alerts |
+| GET | `/api/health` | No | System health |
 
 ---
 
-## Excel Export Format
+## Data Storage
 
-The exported Excel matches the father's existing daily worksheet format exactly:
-- Header rows with shop info, invoice details, salesmen names
-- All 54 products with calculated columns
-- Formulas: TOTAL = OP.ST + PURCHASE - STOCK RETURN, CL.ST = CASE × CASE_SIZE + BOTTLE, SALES = TOTAL - CL.ST
-- Denomination section with total cash
+- **Primary:** SQLite (`backend/data/tasmac.db`) — WAL mode, auto-backup
+- **Legacy:** JSON file (`backend/data/store.json`) — auto-migrated to SQLite on first run
+- **Backups:** `backend/data/backups/` — .db files via VACUUM INTO
+- **Cloud:** Firebase Firestore (optional mirror for web dashboard)
+
+---
+
+## Building Desktop Installer
+
+```bash
+cd electron
+npm install
+npm run build:win        # Windows NSIS installer
+npm run build:win-portable  # Portable .exe (no install)
+npm run build:mac        # macOS .dmg
+npm run build:linux      # Linux AppImage
+```
+
+See `electron/BUILD.md` for detailed instructions.
+
+---
+
+## Documentation
+
+| File | Description |
+|------|-------------|
+| `SETUP_GUIDE.md` | How to run, troubleshoot, PINs |
+| `ARCHITECTURE.md` | System design, data flow diagrams |
+| `FIREBASE_SYNC_GUIDE.md` | Firebase setup, sync mechanism |
+| `electron/BUILD.md` | Desktop build instructions |
+
+---
+
+## Color Palette
+
+| Color | Hex | Usage |
+|-------|-----|-------|
+| Green | `#0E6633` | Primary, headers, success |
+| Red | `#D92426` | Danger, errors, negative values |
+| White | `#FFFFFF` | Cards, backgrounds |
+| Light Gray | `#F4F6F4` | Body background, subtle fills |
+| Dark Green | `#1E291E` | Sidebar, dark text |
+
+---
+
+## Contact
+
+- **Shop:** TASMAC Shop No. 1745
+- **Address:** SF NO-1101/1A, Siruvani Main Road, Near H.P Petrol Bunk, Alandurai, Coimbatore-(North) -641101
+- **Mobile:** 99429 10707, 99422 10707
